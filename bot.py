@@ -13,20 +13,20 @@ from config import API_TOKEN
 from database import SessionLocal, Service, Master, TimeSlot, User, Appointment, TimeSlotStatus, master_service_association
 from sqlalchemy.orm import joinedload
 
-# Настройка логгера
+
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
-# Создание объекта бота
+
 bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 router = Router()
 
-# Хранение временных данных о записи пользователя
+
 user_booking_data = {}
 
 
 
-# Обработчик первого взаимодействия
+
 @router.message(F.text == "/start")
 async def first_interaction(message: Message):
     keyboard = InlineKeyboardMarkup(
@@ -594,4 +594,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
