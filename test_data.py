@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from database import Base, Service, Master, TimeSlot, Appointment, master_service_association
+from database import Base, Service, Master, TimeSlot, Appointment, master_service_association, TimeSlotStatus
 
 # Настройка подключения к базе данных
-engine = create_engine("sqlite:///database.db")
+engine = create_engine("sqlite:///database.db", echo=False)
 SessionLocal = sessionmaker(bind=engine)
 Base.metadata.create_all(engine)
 
@@ -13,25 +13,29 @@ def setup_test_data():
         # Удаляем старые данные
         session.query(Appointment).delete()
         session.query(TimeSlot).delete()
+        session.query(master_service_association).delete()
         session.query(Master).delete()
         session.query(Service).delete()
         session.commit()
 
         # Создаем услуги
-        service1 = Service(name="Укладка", duration=120, cost=2000)
-        service2 = Service(name="Маникюр с покрытием", duration=90, cost=1800)
-        session.add_all([service1, service2])
+        service1 = Service(name="Укладка", duration=120, cost=2000)  # 2 часа
+        service2 = Service(name="Маникюр", duration=90, cost=1800)    # 1.5 часа
+        service3 = Service(name="Педикюр", duration=60, cost=1500)    # 1 час
+        session.add_all([service1, service2, service3])
         session.commit()
 
-        # Создаем мастеров и привязываем к услугам
-        master1 = Master(name="Марина", experience=5, rating=4.5)
-        master1.services.append(service1)  # Марина предоставляет услугу "Укладка"
-        master2 = Master(name="Анна", experience=3, rating=4.0)
-        master2.services.append(service2)  # Анна предоставляет услугу "Маникюр с покрытием"
-        session.add_all([master1, master2])
+        # Создаем мастеров и связываем их с услугами
+        master1 = Master(name="Марина", rating=4.5)
+        master1.services.extend([service1])  # Марина предоставляет "Укладку"
+        master2 = Master(name="Анна", rating=4.0)
+        master2.services.extend([service2, service3])  # Анна предоставляет "Маникюр" и "Педикюр"
+        master3 = Master(name="Яна", rating=4.3)
+        master3.services.extend([service2, service3])  # Яна предоставляет "Маникюр" и "Педикюр"
+        session.add_all([master1, master2, master3])
         session.commit()
 
-        # Добавляем временные слоты для мастеров на следующую неделю
+        # Добавляем временные слоты для мастеров на следующую неделю с интервалом 15 минут
         masters = session.query(Master).all()
         today = datetime.now()
         next_week_start = today + timedelta(days=(7 - today.weekday()))
@@ -46,10 +50,9 @@ def setup_test_data():
                     session.add(TimeSlot(
                         master_id=master.id,
                         start_time=current_time,
-                        end_time=current_time + timedelta(minutes=30),
-                        status="free"
+                        status=TimeSlotStatus.free
                     ))
-                    current_time += timedelta(minutes=30)
+                    current_time += timedelta(minutes=15)
                 current_date += timedelta(days=1)
         session.commit()
 

@@ -7,9 +7,10 @@ from aiogram import Bot, Dispatcher, Router, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+import aiogram.exceptions
 
 from config import API_TOKEN
-from database import SessionLocal, Service, Master, TimeSlot, User, Appointment
+from database import SessionLocal, Service, Master, TimeSlot, User, Appointment, TimeSlotStatus, master_service_association
 from sqlalchemy.orm import joinedload
 
 # Настройка логгера
@@ -22,6 +23,7 @@ router = Router()
 
 # Хранение временных данных о записи пользователя
 user_booking_data = {}
+
 
 
 # Обработчик первого взаимодействия
@@ -49,7 +51,15 @@ async def send_main_menu(message):
             [InlineKeyboardButton(text="Мои записи", callback_data="my_bookings")],
         ]
     )
-    await message.edit_text("Выберите действие:", reply_markup=keyboard)
+    new_text = "Выберите действие:"
+    if message.text != new_text or message.reply_markup != keyboard:
+        try:
+            await message.edit_text(new_text, reply_markup=keyboard)
+        except aiogram.exceptions.TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                pass
+            else:
+                raise
 
 
 # Обработчик команды "Посмотреть услуги"
@@ -66,7 +76,15 @@ async def services_handler(callback_query: CallbackQuery):
                 [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
             ]
         )
-    await callback_query.message.edit_text("Выберите услугу:", reply_markup=keyboard)
+    new_text = "Выберите услугу:"
+    if callback_query.message.text != new_text or callback_query.message.reply_markup != keyboard:
+        try:
+            await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+        except aiogram.exceptions.TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                pass
+            else:
+                raise
 
 
 # Обработчик кнопки "Назад в меню"
@@ -81,34 +99,64 @@ async def select_service_handler(callback_query: CallbackQuery):
     service_id = int(callback_query.data.split("_")[1])
     with SessionLocal() as session:
         service = session.query(Service).filter(Service.id == service_id).first()
+        # Получаем мастеров, предоставляющих эту услугу
+        masters = service.masters
 
-    user_booking_data[callback_query.from_user.id] = {"service_id": service_id, "service_name": service.name}
+    user_booking_data[callback_query.from_user.id] = {
+        "service_id": service_id,
+        "service_name": service.name,
+        "service_duration": service.duration  # Store duration in minutes
+    }
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Выбрать мастера", callback_data="select_master")],
             [InlineKeyboardButton(text="Выбрать время (мастер не важен)", callback_data="select_time_no_master")],
+            [InlineKeyboardButton(text="Назад", callback_data="services")],
             [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
         ]
     )
-    await callback_query.message.edit_text("Как вы хотите продолжить?", reply_markup=keyboard)
+    new_text = "Как вы хотите продолжить?"
+    if callback_query.message.text != new_text or callback_query.message.reply_markup != keyboard:
+        try:
+            await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+        except aiogram.exceptions.TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                pass
+            else:
+                raise
 
 
 # Обработчик выбора мастера
 @router.callback_query(F.data == "select_master")
 async def select_master_handler(callback_query: CallbackQuery):
+    user_id = callback_query.from_user.id
+    service_id = user_booking_data[user_id]["service_id"]
     with SessionLocal() as session:
-        masters = session.query(Master).all()
+        service = session.query(Service).filter(Service.id == service_id).first()
+        masters = service.masters
 
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text=master.name, callback_data=f"master_{master.id}")]
+                [InlineKeyboardButton(
+                    text=f"{master.name} (Рейтинг: {master.rating})",
+                    callback_data=f"master_{master.id}"
+                )]
                 for master in masters
             ] + [
+                [InlineKeyboardButton(text="Назад", callback_data=f"service_{service_id}")],
                 [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
             ]
         )
-    await callback_query.message.edit_text("Выберите мастера:", reply_markup=keyboard)
+    new_text = "Выберите мастера:"
+    if callback_query.message.text != new_text or callback_query.message.reply_markup != keyboard:
+        try:
+            await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+        except aiogram.exceptions.TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                pass
+            else:
+                raise
 
 
 # Обработчик выбора мастера
@@ -133,20 +181,84 @@ async def show_calendar_no_master(callback_query: CallbackQuery):
 # Показ календаря
 async def show_calendar(message, user_id, week_offset):
     today = datetime.now().date()
-    start_of_week = today + timedelta(weeks=week_offset)
-    dates = [start_of_week + timedelta(days=i) for i in range(7)]
+    dates_with_slots = []
+    max_weeks = 3  # Максимальное количество дополнительных недель (текущая неделя + 3 = 4 недели)
+    week_offset = max(0, min(week_offset, max_weeks))  # Ограничиваем week_offset
+
+    with SessionLocal() as session:
+        service_id = user_booking_data[user_id]["service_id"]
+        service_duration = user_booking_data[user_id]["service_duration"]
+        master_id = user_booking_data[user_id].get("master_id")
+
+        # Получаем мастеров, предоставляющих выбранную услугу
+        if master_id is None:
+            masters = session.query(Master).join(master_service_association).filter(master_service_association.c.service_id == service_id).all()
+            master_ids = [master.id for master in masters]
+        else:
+            master_ids = [master_id]
+
+        for i in range(7):
+            date = today + timedelta(days=i + (week_offset * 7))
+            start_datetime = datetime.combine(date, datetime.min.time())
+            end_datetime = start_datetime + timedelta(days=1)
+
+            # Получаем все свободные слоты мастеров, предоставляющих выбранную услугу
+            all_slots = session.query(TimeSlot).options(
+                joinedload(TimeSlot.master)
+            ).filter(
+                TimeSlot.master_id.in_(master_ids),
+                TimeSlot.start_time >= start_datetime,
+                TimeSlot.start_time < end_datetime,
+                TimeSlot.status == TimeSlotStatus.free
+            ).order_by(TimeSlot.master_id, TimeSlot.start_time).all()
+
+            available_slots = find_available_slots(all_slots, service_duration)
+
+            if available_slots:
+                dates_with_slots.append(date)
+
+    if not dates_with_slots:
+        week_start = today + timedelta(days=week_offset * 7)
+        week_end = week_start + timedelta(days=6)
+        week_start_str = week_start.strftime("%d.%m")
+        week_end_str = week_end.strftime("%d.%m")
+        message_text = f"На неделю с {week_start_str} по {week_end_str} свободных окошек нет."
+    else:
+        message_text = "Выберите дату:"
+
+    # Формируем кнопки для дат
+    date_buttons = [
+        [InlineKeyboardButton(text=date.strftime("%d %b %Y"), callback_data=f"date_{date.isoformat()}_{week_offset}")]
+        for date in dates_with_slots
+    ]
+
+    # Кнопки навигации по неделям
+    navigation_buttons = []
+    if week_offset > 0:
+        navigation_buttons.append(InlineKeyboardButton(text="⬅️ Пред. неделя", callback_data=f"change_week_{week_offset - 1}"))
+    if week_offset < max_weeks:
+        navigation_buttons.append(InlineKeyboardButton(text="След. неделя ➡️", callback_data=f"change_week_{week_offset + 1}"))
+
+    # Кнопка "Назад"
+    back_callback = "select_master" if user_booking_data[user_id].get("master_id") is not None else f"service_{user_booking_data[user_id]['service_id']}"
 
     keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=date.strftime("%d %b %Y"), callback_data=f"date_{date.isoformat()}_{week_offset}")]
-            for date in dates
-        ] + [
-            [InlineKeyboardButton(text="⬅️ Пред. неделя", callback_data=f"change_week_{week_offset - 1}"),
-             InlineKeyboardButton(text="След. неделя ➡️", callback_data=f"change_week_{week_offset + 1}")],
+        inline_keyboard=date_buttons + [
+            navigation_buttons,
+            [InlineKeyboardButton(text="Назад", callback_data=back_callback)],
             [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
         ]
     )
-    await message.edit_text("Выберите дату:", reply_markup=keyboard)
+
+    # Проверяем изменения перед отправкой
+    if message.text != message_text or message.reply_markup != keyboard:
+        try:
+            await message.edit_text(message_text, reply_markup=keyboard)
+        except aiogram.exceptions.TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                pass
+            else:
+                raise
 
 
 # Обработчик выбора недели
@@ -154,6 +266,9 @@ async def show_calendar(message, user_id, week_offset):
 async def change_week_handler(callback_query: CallbackQuery):
     week_offset = int(callback_query.data.split("_")[2])
     user_id = callback_query.from_user.id
+
+    # Сохраняем текущий week_offset
+    user_booking_data[user_id]['week_offset'] = week_offset
 
     await show_calendar(callback_query.message, user_id, week_offset)
 
@@ -168,30 +283,37 @@ async def date_selected_handler(callback_query: CallbackQuery):
     user_id = callback_query.from_user.id
     booking_data = user_booking_data.get(user_id)
     if not booking_data:
-        await callback_query.message.answer("Ошибка: данные записи не найдены.")
+        await callback_query.message.edit_text("Ошибка: данные записи не найдены.")
         return
     master_id = booking_data.get("master_id")
     service_id = booking_data.get("service_id")
+    service_duration = booking_data.get("service_duration")  # Duration in minutes
+
+    # Сохраняем текущий week_offset
+    user_booking_data[user_id]['week_offset'] = week_offset
+
+    start_datetime = datetime.combine(selected_date, datetime.min.time())
+    end_datetime = start_datetime + timedelta(days=1)
 
     with SessionLocal() as session:
-        service = session.query(Service).filter(Service.id == service_id).first()
-        if master_id:
-            available_slots = session.query(TimeSlot).options(
-                joinedload(TimeSlot.master)
-            ).filter(
-                TimeSlot.master_id == master_id,
-                TimeSlot.start_time >= datetime.combine(selected_date, datetime.min.time()),
-                TimeSlot.start_time < datetime.combine(selected_date + timedelta(days=1), datetime.min.time()),
-                TimeSlot.status == 'free'
-            ).all()
+        if master_id is None:
+            masters = session.query(Master).join(master_service_association).filter(master_service_association.c.service_id == service_id).all()
+            master_ids = [master.id for master in masters]
         else:
-            available_slots = session.query(TimeSlot).options(
-                joinedload(TimeSlot.master)
-            ).filter(
-                TimeSlot.start_time >= datetime.combine(selected_date, datetime.min.time()),
-                TimeSlot.start_time < datetime.combine(selected_date + timedelta(days=1), datetime.min.time()),
-                TimeSlot.status == 'free'
-            ).all()
+            master_ids = [master_id]
+
+        # Получаем все свободные слоты мастеров, предоставляющих выбранную услугу
+        all_slots = session.query(TimeSlot).options(
+            joinedload(TimeSlot.master)
+        ).filter(
+            TimeSlot.master_id.in_(master_ids),
+            TimeSlot.start_time >= start_datetime,
+            TimeSlot.start_time < end_datetime,
+            TimeSlot.status == TimeSlotStatus.free
+        ).order_by(TimeSlot.master_id, TimeSlot.start_time).all()
+
+        # Ищем доступные слоты, которые могут вместить продолжительность услуги
+        available_slots = find_available_slots(all_slots, service_duration)
 
         if not available_slots:
             keyboard = InlineKeyboardMarkup(
@@ -200,14 +322,22 @@ async def date_selected_handler(callback_query: CallbackQuery):
                     [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
                 ]
             )
-            await callback_query.message.edit_text("Нет доступных слотов на эту дату.", reply_markup=keyboard)
+            new_text = "Нет доступных слотов на эту дату."
+            if callback_query.message.text != new_text or callback_query.message.reply_markup != keyboard:
+                try:
+                    await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+                except aiogram.exceptions.TelegramBadRequest as e:
+                    if "message is not modified" in str(e):
+                        pass
+                    else:
+                        raise
             return
 
         # Формируем клавиатуру внутри контекста сессии
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(
-                    text=f"{slot.start_time.strftime('%H:%M')} ({slot.master.name if slot.master else 'Любой'})",
+                    text=f"{slot.start_time.strftime('%H:%M')} ({slot.master.name})",
                     callback_data=f"slot_{slot.id}"
                 )]
                 for slot in available_slots
@@ -218,7 +348,44 @@ async def date_selected_handler(callback_query: CallbackQuery):
         )
 
     # Отправляем сообщение после закрытия сессии
-    await callback_query.message.edit_text("Выберите время:", reply_markup=keyboard)
+    new_text = "Выберите время:"
+    if callback_query.message.text != new_text or callback_query.message.reply_markup != keyboard:
+        try:
+            await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+        except aiogram.exceptions.TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                pass
+            else:
+                raise
+
+
+def find_available_slots(slots, service_duration):
+    required_slots = service_duration // 15
+    available_slots = []
+    i = 0
+    while i < len(slots):
+        master_id = slots[i].master_id
+        start_index = i
+        end_index = i + required_slots
+        consecutive_slots = slots[start_index:end_index]
+
+        if len(consecutive_slots) < required_slots:
+            break
+
+        is_consecutive = True
+        for j in range(required_slots - 1):
+            if (consecutive_slots[j+1].start_time != consecutive_slots[j].start_time + timedelta(minutes=15) or
+                consecutive_slots[j+1].status != TimeSlotStatus.free or
+                consecutive_slots[j+1].master_id != master_id):
+                is_consecutive = False
+                break
+
+        if is_consecutive:
+            available_slots.append(consecutive_slots[0])
+            i += 1
+        else:
+            i += 1
+    return available_slots
 
 
 # Обработчик выбора времени
@@ -226,31 +393,40 @@ async def date_selected_handler(callback_query: CallbackQuery):
 async def confirm_booking_handler(callback_query: CallbackQuery):
     slot_id = int(callback_query.data.split("_")[1])
     user_id = callback_query.from_user.id
+    service_duration = user_booking_data[user_id].get("service_duration")  # Duration in minutes
 
     with SessionLocal() as session:
         slot = session.query(TimeSlot).options(joinedload(TimeSlot.master)).filter(TimeSlot.id == slot_id).first()
         user_booking_data[user_id]["slot_id"] = slot_id
         user_booking_data[user_id]["slot_time"] = slot.start_time
+        user_booking_data[user_id]["master_id"] = slot.master_id  # Сохраняем master_id выбранного слота
 
-        master_name = slot.master.name if slot.master else "Любой"
+        master_name = slot.master.name
 
+        week_offset = user_booking_data[user_id].get('week_offset', 0)
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="Подтверждаю", callback_data="confirm_booking")],
-                [InlineKeyboardButton(text="Изменить запись", callback_data="change_booking")],
+                [InlineKeyboardButton(text="Назад", callback_data=f"date_{slot.start_time.date().isoformat()}_{week_offset}")],
                 [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
             ]
         )
 
-        # Отправляем сообщение внутри сессии
-        await callback_query.message.edit_text(
+        new_text = (
             f"Вы хотите записаться на:\n"
             f"Дата и время: <b>{slot.start_time.strftime('%Y-%m-%d %H:%M')}</b>\n"
             f"Услуга: <b>{user_booking_data[user_id]['service_name']}</b>\n"
             f"Мастер: <b>{master_name}</b>\n"
-            f"Все верно?",
-            reply_markup=keyboard
+            f"Все верно?"
         )
+        if callback_query.message.text != new_text or callback_query.message.reply_markup != keyboard:
+            try:
+                await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+            except aiogram.exceptions.TelegramBadRequest as e:
+                if "message is not modified" in str(e):
+                    pass
+                else:
+                    raise
 
 
 # Обработчик подтверждения записи
@@ -260,24 +436,47 @@ async def save_booking(callback_query: CallbackQuery):
     booking_data = user_booking_data.get(user_id)
 
     if not booking_data:
-        await callback_query.message.answer("Ошибка: данные записи не найдены.")
+        await callback_query.message.edit_text("Ошибка: данные записи не найдены.")
         return
 
     slot_id = booking_data.get("slot_id")
     if not slot_id:
-        await callback_query.message.answer("Ошибка: выбранное время не найдено.")
+        await callback_query.message.edit_text("Ошибка: выбранное время не найдено.")
         return
 
     service_id = booking_data.get("service_id")
+    service_duration = booking_data.get("service_duration")  # Duration in minutes
+    required_slots = service_duration // 15
+    master_id = booking_data.get("master_id")
 
     with SessionLocal() as session:
-        slot = session.query(TimeSlot).filter(TimeSlot.id == slot_id).first()
+        # Get the starting slot
+        starting_slot = session.query(TimeSlot).filter(TimeSlot.id == slot_id).first()
 
-        if slot.status != 'free':
-            await callback_query.message.answer("Извините, это время уже занято.")
+        if not starting_slot:
+            await callback_query.message.edit_text("Ошибка: выбранный слот не найден.")
             return
 
-        slot.status = "booked"
+        # Get all required slots
+        slots_query = session.query(TimeSlot).filter(
+            TimeSlot.start_time >= starting_slot.start_time,
+            TimeSlot.start_time < starting_slot.start_time + timedelta(minutes=service_duration),
+            TimeSlot.master_id == master_id,
+            TimeSlot.status == TimeSlotStatus.free
+        )
+
+        slots_to_book = slots_query.order_by(TimeSlot.start_time).all()
+
+        if len(slots_to_book) < required_slots:
+            await callback_query.message.edit_text("Извините, выбранное время больше недоступно.")
+            return
+
+        # Mark slots as booked
+        for slot in slots_to_book:
+            slot.status = TimeSlotStatus.booked
+
+        # Фиксируем изменения в базе данных
+        session.commit()
 
         # Получаем или создаем пользователя
         user = session.query(User).filter(User.telegram_id == str(user_id)).first()
@@ -289,9 +488,9 @@ async def save_booking(callback_query: CallbackQuery):
         # Создаем запись на прием
         appointment = Appointment(
             user_id=user.id,
-            master_id=slot.master_id,
+            master_id=master_id,
             service_id=service_id,
-            timeslot_id=slot.id,
+            timeslot_id=starting_slot.id,
             status='scheduled'
         )
         session.add(appointment)
@@ -305,11 +504,18 @@ async def save_booking(callback_query: CallbackQuery):
         ]
     )
 
-    await callback_query.message.edit_text(
+    new_text = (
         f"Спасибо! Ваша запись подтверждена:\nДата: {booking_data['slot_time'].strftime('%Y-%m-%d %H:%M')}\n"
-        f"Услуга: {booking_data['service_name']}",
-        reply_markup=keyboard
+        f"Услуга: {booking_data['service_name']}\n"
+        f"Мастер: {starting_slot.master.name}"
     )
+    try:
+        await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+    except aiogram.exceptions.TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            raise
 
 
 # Обработчик кнопки "Мои записи"
@@ -320,14 +526,19 @@ async def my_bookings_handler(callback_query: CallbackQuery):
     with SessionLocal() as session:
         user = session.query(User).filter(User.telegram_id == str(user_id)).first()
         if not user:
-            await callback_query.message.edit_text(
-                "У вас пока нет активных записей.",
-                reply_markup=InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
-                    ]
-                )
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+                ]
             )
+            new_text = "У вас пока нет активных записей."
+            try:
+                await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+            except aiogram.exceptions.TelegramBadRequest as e:
+                if "message is not modified" in str(e):
+                    pass
+                else:
+                    raise
             return
 
         # Загружаем связанные объекты с помощью joinedload
@@ -338,29 +549,39 @@ async def my_bookings_handler(callback_query: CallbackQuery):
         ).filter(Appointment.user_id == user.id).all()
 
         if not bookings:
-            await callback_query.message.edit_text(
-                "У вас пока нет активных записей.",
-                reply_markup=InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
-                    ]
-                )
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+                ]
             )
+            new_text = "У вас пока нет активных записей."
+            try:
+                await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+            except aiogram.exceptions.TelegramBadRequest as e:
+                if "message is not modified" in str(e):
+                    pass
+                else:
+                    raise
             return
 
         booking_details = "\n".join(
-            f"- {booking.timeslot.start_time.strftime('%Y-%m-%d %H:%M')} | {booking.service.name} | Мастер: {booking.master.name if booking.master else 'Любой'}"
+            f"- {booking.timeslot.start_time.strftime('%Y-%m-%d %H:%M')} | {booking.service.name} | Мастер: {booking.master.name}"
             for booking in bookings
         )
 
-    await callback_query.message.edit_text(
-        f"Ваши записи:\n{booking_details}",
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
-            ]
-        )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+        ]
     )
+    new_text = f"Ваши записи:\n{booking_details}"
+    try:
+        await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+    except aiogram.exceptions.TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            raise
 
 
 # Регистрация роутеров
@@ -368,6 +589,7 @@ dp.include_router(router)
 
 # Основная функция
 async def main():
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
