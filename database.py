@@ -1,7 +1,6 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Table, create_engine
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Table, create_engine, event
 from sqlalchemy.orm import relationship, sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
 Base = declarative_base()
@@ -39,6 +38,20 @@ class User(Base):   # Модель клиента
 
     # Отношение с отзывами (Review)
     reviews = relationship('Review', back_populates='user')
+
+    # Отношение с состоянием пользователя
+    state = relationship('UserState', uselist=False, back_populates='user')
+
+
+class UserState(Base):
+    __tablename__ = 'user_states'
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    current_state = Column(String)
+    previous_state = Column(String)
+    data = Column(String)  # Дополнительные данные, если нужны
+
+    # Отношение с пользователем
+    user = relationship('User', back_populates='state')
 
 
 class Master(Base):  # Модель мастера
@@ -90,12 +103,25 @@ class TimeSlot(Base):  # Модель временного слота
     start_time = Column(DateTime)
     end_time = Column(DateTime)
     status = Column(String)  # Возможные значения: 'free', 'booked', 'not_working'
+    day = Column(Integer)
+    month = Column(Integer)
 
     # Отношение с мастером
     master = relationship('Master', back_populates='timeslots')
 
     # Отношение с записью на приём (Appointment)
     appointment = relationship('Appointment', back_populates='timeslot', uselist=False)
+
+    # Автоматическое обновление полей day и month при добавлении или обновлении TimeSlot
+    @staticmethod
+    def set_day_month(mapper, connection, target):
+        if target.start_time:
+            target.day = target.start_time.day
+            target.month = target.start_time.month
+
+# События для автоматического заполнения day и month перед вставкой и обновлением
+event.listen(TimeSlot, 'before_insert', TimeSlot.set_day_month)
+event.listen(TimeSlot, 'before_update', TimeSlot.set_day_month)
 
 
 class Appointment(Base):  # Модель записи на приём
