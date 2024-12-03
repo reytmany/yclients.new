@@ -499,8 +499,6 @@ async def test_date_selected_handler_no_available_slots(callback_query, message,
 
     # Выполнение
     await date_selected_handler(callback_query)
-
-    # Проверка
     expected_text = "Нет доступных слотов на эту дату."
     expected_keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -514,7 +512,6 @@ async def test_date_selected_handler_no_available_slots(callback_query, message,
 @pytest.mark.asyncio
 async def test_date_selected_handler_with_available_slots(callback_query, message, mock_db_session, master):
     """Тест на наличие доступных слотов."""
-    # Настройка
     callback_query.data = "date_2024-12-03_0"
     callback_query.message = message()
     user_id = callback_query.from_user.id
@@ -536,7 +533,7 @@ async def test_date_selected_handler_with_available_slots(callback_query, messag
     with patch('bot.find_available_slots', return_value=[mock_slot]):
         await date_selected_handler(callback_query)
 
-    # Проверка
+
     expected_text = "Выберите время:"
     expected_keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
