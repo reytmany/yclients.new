@@ -10,23 +10,23 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 import aiogram.exceptions
 
 from config import API_TOKEN
-from database import SessionLocal, Service, Master, TimeSlot, User, Appointment, TimeSlotStatus, master_service_association
+from database import SessionLocal, Service, Master, TimeSlot, User, Appointment, TimeSlotStatus, \
+    master_service_association
 from sqlalchemy.orm import joinedload
 
-
+# Настройка логгера
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
-
+# Создание объекта бота с использованием DefaultBotProperties
 bot = Bot(token=API_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 router = Router()
 
-
+# Хранение временных данных о записи пользователя
 user_booking_data = {}
 
 
-
-
+# Обработчик первого взаимодействия
 @router.message(F.text == "/start")
 async def first_interaction(message: Message):
     keyboard = InlineKeyboardMarkup(
@@ -52,14 +52,13 @@ async def send_main_menu(message):
         ]
     )
     new_text = "Выберите действие:"
-    if message.text != new_text or message.reply_markup != keyboard:
-        try:
-            await message.edit_text(new_text, reply_markup=keyboard)
-        except aiogram.exceptions.TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                pass
-            else:
-                raise
+    try:
+        await message.edit_text(new_text, reply_markup=keyboard)
+    except aiogram.exceptions.TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            raise
 
 
 # Обработчик команды "Посмотреть услуги"
@@ -70,21 +69,21 @@ async def services_handler(callback_query: CallbackQuery):
 
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text=f"{service.name} - {service.cost} руб.", callback_data=f"service_{service.id}")]
-                for service in services
-            ] + [
-                [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
-            ]
+                                [InlineKeyboardButton(text=f"{service.name} - {service.cost} руб.",
+                                                      callback_data=f"service_{service.id}")]
+                                for service in services
+                            ] + [
+                                [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+                            ]
         )
     new_text = "Выберите услугу:"
-    if callback_query.message.text != new_text or callback_query.message.reply_markup != keyboard:
-        try:
-            await callback_query.message.edit_text(new_text, reply_markup=keyboard)
-        except aiogram.exceptions.TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                pass
-            else:
-                raise
+    try:
+        await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+    except aiogram.exceptions.TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            raise
 
 
 # Обработчик кнопки "Назад в меню"
@@ -117,14 +116,13 @@ async def select_service_handler(callback_query: CallbackQuery):
         ]
     )
     new_text = "Как вы хотите продолжить?"
-    if callback_query.message.text != new_text or callback_query.message.reply_markup != keyboard:
-        try:
-            await callback_query.message.edit_text(new_text, reply_markup=keyboard)
-        except aiogram.exceptions.TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                pass
-            else:
-                raise
+    try:
+        await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+    except aiogram.exceptions.TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            raise
 
 
 # Обработчик выбора мастера
@@ -138,25 +136,24 @@ async def select_master_handler(callback_query: CallbackQuery):
 
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(
-                    text=f"{master.name} (Рейтинг: {master.rating})",
-                    callback_data=f"master_{master.id}"
-                )]
-                for master in masters
-            ] + [
-                [InlineKeyboardButton(text="Назад", callback_data=f"service_{service_id}")],
-                [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
-            ]
+                                [InlineKeyboardButton(
+                                    text=f"{master.name} (Рейтинг: {master.rating})",
+                                    callback_data=f"master_{master.id}"
+                                )]
+                                for master in masters
+                            ] + [
+                                [InlineKeyboardButton(text="Назад", callback_data=f"service_{service_id}")],
+                                [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+                            ]
         )
     new_text = "Выберите мастера:"
-    if callback_query.message.text != new_text or callback_query.message.reply_markup != keyboard:
-        try:
-            await callback_query.message.edit_text(new_text, reply_markup=keyboard)
-        except aiogram.exceptions.TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                pass
-            else:
-                raise
+    try:
+        await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+    except aiogram.exceptions.TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            raise
 
 
 # Обработчик выбора мастера
@@ -180,11 +177,17 @@ async def show_calendar_no_master(callback_query: CallbackQuery):
 
 # Показ календаря
 async def show_calendar(message, user_id, week_offset):
+    # Определяем текущий понедельник
     today = datetime.now().date()
-    dates_with_slots = []
+    current_week_start = today - timedelta(days=today.weekday())  # Понедельник текущей недели
     max_weeks = 3  # Максимальное количество дополнительных недель (текущая неделя + 3 = 4 недели)
     week_offset = max(0, min(week_offset, max_weeks))  # Ограничиваем week_offset
 
+    # Начало недели для отображения
+    week_start = current_week_start + timedelta(weeks=week_offset)
+    week_end = week_start + timedelta(days=6)  # Воскресенье этой недели
+
+    dates_with_slots = []
     with SessionLocal() as session:
         service_id = user_booking_data[user_id]["service_id"]
         service_duration = user_booking_data[user_id]["service_duration"]
@@ -197,8 +200,8 @@ async def show_calendar(message, user_id, week_offset):
         else:
             master_ids = [master_id]
 
-        for i in range(7):
-            date = today + timedelta(days=i + (week_offset * 7))
+        for i in range(7):  # Проходим по дням недели
+            date = week_start + timedelta(days=i)
             start_datetime = datetime.combine(date, datetime.min.time())
             end_datetime = start_datetime + timedelta(days=1)
 
@@ -218,8 +221,6 @@ async def show_calendar(message, user_id, week_offset):
                 dates_with_slots.append(date)
 
     if not dates_with_slots:
-        week_start = today + timedelta(days=week_offset * 7)
-        week_end = week_start + timedelta(days=6)
         week_start_str = week_start.strftime("%d.%m")
         week_end_str = week_end.strftime("%d.%m")
         message_text = f"На неделю с {week_start_str} по {week_end_str} свободных окошек нет."
@@ -251,14 +252,14 @@ async def show_calendar(message, user_id, week_offset):
     )
 
     # Проверяем изменения перед отправкой
-    if message.text != message_text or message.reply_markup != keyboard:
-        try:
-            await message.edit_text(message_text, reply_markup=keyboard)
-        except aiogram.exceptions.TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                pass
-            else:
-                raise
+    try:
+        await message.edit_text(message_text, reply_markup=keyboard)
+    except aiogram.exceptions.TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            raise
+
 
 
 # Обработчик выбора недели
@@ -297,7 +298,8 @@ async def date_selected_handler(callback_query: CallbackQuery):
 
     with SessionLocal() as session:
         if master_id is None:
-            masters = session.query(Master).join(master_service_association).filter(master_service_association.c.service_id == service_id).all()
+            masters = session.query(Master).join(master_service_association).filter(
+                master_service_association.c.service_id == service_id).all()
             master_ids = [master.id for master in masters]
         else:
             master_ids = [master_id]
@@ -323,40 +325,38 @@ async def date_selected_handler(callback_query: CallbackQuery):
                 ]
             )
             new_text = "Нет доступных слотов на эту дату."
-            if callback_query.message.text != new_text or callback_query.message.reply_markup != keyboard:
-                try:
-                    await callback_query.message.edit_text(new_text, reply_markup=keyboard)
-                except aiogram.exceptions.TelegramBadRequest as e:
-                    if "message is not modified" in str(e):
-                        pass
-                    else:
-                        raise
+            try:
+                await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+            except aiogram.exceptions.TelegramBadRequest as e:
+                if "message is not modified" in str(e):
+                    pass
+                else:
+                    raise
             return
 
         # Формируем клавиатуру внутри контекста сессии
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(
-                    text=f"{slot.start_time.strftime('%H:%M')} ({slot.master.name})",
-                    callback_data=f"slot_{slot.id}"
-                )]
-                for slot in available_slots
-            ] + [
-                [InlineKeyboardButton(text="Назад", callback_data=f"change_week_{week_offset}")],
-                [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
-            ]
+                                [InlineKeyboardButton(
+                                    text=f"{slot.start_time.strftime('%H:%M')} ({slot.master.name})",
+                                    callback_data=f"slot_{slot.id}"
+                                )]
+                                for slot in available_slots
+                            ] + [
+                                [InlineKeyboardButton(text="Назад", callback_data=f"change_week_{week_offset}")],
+                                [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+                            ]
         )
 
     # Отправляем сообщение после закрытия сессии
     new_text = "Выберите время:"
-    if callback_query.message.text != new_text or callback_query.message.reply_markup != keyboard:
-        try:
-            await callback_query.message.edit_text(new_text, reply_markup=keyboard)
-        except aiogram.exceptions.TelegramBadRequest as e:
-            if "message is not modified" in str(e):
-                pass
-            else:
-                raise
+    try:
+        await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+    except aiogram.exceptions.TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            raise
 
 
 def find_available_slots(slots, service_duration):
@@ -370,19 +370,20 @@ def find_available_slots(slots, service_duration):
         consecutive_slots = slots[start_index:end_index]
 
         if len(consecutive_slots) < required_slots:
-            break
+            i += 1
+            continue
 
         is_consecutive = True
         for j in range(required_slots - 1):
-            if (consecutive_slots[j+1].start_time != consecutive_slots[j].start_time + timedelta(minutes=15) or
-                consecutive_slots[j+1].status != TimeSlotStatus.free or
-                consecutive_slots[j+1].master_id != master_id):
+            if (consecutive_slots[j + 1].start_time != consecutive_slots[j].start_time + timedelta(minutes=15) or
+                    consecutive_slots[j + 1].status != TimeSlotStatus.free or
+                    consecutive_slots[j + 1].master_id != master_id):
                 is_consecutive = False
                 break
 
         if is_consecutive:
             available_slots.append(consecutive_slots[0])
-            i += 1
+            i += required_slots  # Пропускаем проверенные слоты
         else:
             i += 1
     return available_slots
@@ -407,7 +408,8 @@ async def confirm_booking_handler(callback_query: CallbackQuery):
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="Подтверждаю", callback_data="confirm_booking")],
-                [InlineKeyboardButton(text="Назад", callback_data=f"date_{slot.start_time.date().isoformat()}_{week_offset}")],
+                [InlineKeyboardButton(text="Назад",
+                                      callback_data=f"date_{slot.start_time.date().isoformat()}_{week_offset}")],
                 [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
             ]
         )
@@ -419,14 +421,13 @@ async def confirm_booking_handler(callback_query: CallbackQuery):
             f"Мастер: <b>{master_name}</b>\n"
             f"Все верно?"
         )
-        if callback_query.message.text != new_text or callback_query.message.reply_markup != keyboard:
-            try:
-                await callback_query.message.edit_text(new_text, reply_markup=keyboard)
-            except aiogram.exceptions.TelegramBadRequest as e:
-                if "message is not modified" in str(e):
-                    pass
-                else:
-                    raise
+        try:
+            await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+        except aiogram.exceptions.TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                pass
+            else:
+                raise
 
 
 # Обработчик подтверждения записи
@@ -450,14 +451,21 @@ async def save_booking(callback_query: CallbackQuery):
     master_id = booking_data.get("master_id")
 
     with SessionLocal() as session:
-        # Get the starting slot
-        starting_slot = session.query(TimeSlot).filter(TimeSlot.id == slot_id).first()
+        # Загружаем starting_slot вместе с master
+        starting_slot = session.query(TimeSlot).options(joinedload(TimeSlot.master)).filter(
+            TimeSlot.id == slot_id).first()
 
         if not starting_slot:
-            await callback_query.message.edit_text("Ошибка: выбранный слот не найден.")
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+                ]
+            )
+            await callback_query.message.edit_text("Извините, выбранное время больше недоступно.",
+                                                   reply_markup=keyboard)
             return
 
-        # Get all required slots
+        # Проверяем доступность необходимых слотов
         slots_query = session.query(TimeSlot).filter(
             TimeSlot.start_time >= starting_slot.start_time,
             TimeSlot.start_time < starting_slot.start_time + timedelta(minutes=service_duration),
@@ -468,22 +476,24 @@ async def save_booking(callback_query: CallbackQuery):
         slots_to_book = slots_query.order_by(TimeSlot.start_time).all()
 
         if len(slots_to_book) < required_slots:
-            await callback_query.message.edit_text("Извините, выбранное время больше недоступно.")
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+                ]
+            )
+            await callback_query.message.edit_text("Извините, выбранное время больше недоступно.",
+                                                   reply_markup=keyboard)
             return
 
-        # Mark slots as booked
+        # Бронируем слоты
         for slot in slots_to_book:
             slot.status = TimeSlotStatus.booked
-
-        # Фиксируем изменения в базе данных
-        session.commit()
 
         # Получаем или создаем пользователя
         user = session.query(User).filter(User.telegram_id == str(user_id)).first()
         if not user:
             user = User(telegram_id=str(user_id))
             session.add(user)
-            session.commit()
 
         # Создаем запись на прием
         appointment = Appointment(
@@ -494,20 +504,23 @@ async def save_booking(callback_query: CallbackQuery):
             status='scheduled'
         )
         session.add(appointment)
+
+        # Фиксируем изменения в базе данных
         session.commit()
 
-    # Клавиатура с опциями после подтверждения
+        # Формируем сообщение внутри сессии
+        new_text = (
+            f"Вы успешно записаны на:\n"
+            f"Дата: {booking_data['slot_time'].strftime('%Y-%m-%d %H:%M')}\n"
+            f"Услуга: {booking_data['service_name']}\n"
+            f"Мастер: {starting_slot.master.name}"
+        )
+
+    # Отправляем сообщение после закрытия сессии
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Вернуться в меню", callback_data="back_to_menu")],
-            [InlineKeyboardButton(text="Мои записи", callback_data="my_bookings")],
+            [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
         ]
-    )
-
-    new_text = (
-        f"Спасибо! Ваша запись подтверждена:\nДата: {booking_data['slot_time'].strftime('%Y-%m-%d %H:%M')}\n"
-        f"Услуга: {booking_data['service_name']}\n"
-        f"Мастер: {starting_slot.master.name}"
     )
     try:
         await callback_query.message.edit_text(new_text, reply_markup=keyboard)
@@ -584,15 +597,52 @@ async def my_bookings_handler(callback_query: CallbackQuery):
             raise
 
 
+# Обработчик произвольных текстовых сообщений
+@router.message()
+async def handle_unrecognized_message(message: Message):
+    user_id = message.from_user.id
+    booking_data = user_booking_data.get(user_id)
+
+    if booking_data and 'service_id' in booking_data:
+        # Пользователь уже выбрал услугу, предлагаем ему выбрать, как продолжить
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Выбрать мастера", callback_data="select_master")],
+                [InlineKeyboardButton(text="Выбрать время (мастер не важен)", callback_data="select_time_no_master")],
+                [InlineKeyboardButton(text="Назад", callback_data="services")],
+                [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+            ]
+        )
+        new_text = "Как вы хотите продолжить?"
+        await message.answer("Используйте кнопки для выбора.")
+        await message.answer(new_text, reply_markup=keyboard)
+    else:
+        # Пользователь еще не выбрал услугу, предлагаем ему выбрать услугу
+        with SessionLocal() as session:
+            services = session.query(Service).all()
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[
+                                    [InlineKeyboardButton(text=f"{service.name} - {service.cost} руб.",
+                                                          callback_data=f"service_{service.id}")]
+                                    for service in services
+                                ] + [
+                                    [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+                                ]
+            )
+        new_text = "Выберите услугу:"
+        await message.answer("Используйте кнопки для выбора.")
+        await message.answer(new_text, reply_markup=keyboard)
+
+
 # Регистрация роутеров
 dp.include_router(router)
+
 
 # Основная функция
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
+
 if __name__ == "__main__":
     asyncio.run(main())
-
-
