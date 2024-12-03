@@ -3,9 +3,9 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from aiogram import types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
-from bot import first_interaction, start_handler, send_main_menu, back_to_menu_handler, select_service_handler, user_booking_data
-from database import Appointment, Service
-
+from bot import first_interaction, start_handler, send_main_menu, back_to_menu_handler, select_service_handler, user_booking_data, select_master_handler, show_calendar_for_master, show_calendar_no_master, show_calendar, change_week_handler, date_selected_handler
+from database import Service, Master
+from datetime import datetime, timedelta
 
 @pytest.fixture
 def message():
@@ -20,6 +20,14 @@ def message():
 
     return _message
 
+@pytest.fixture
+def master():
+    """Фикстура для создания мок-объекта Master"""
+    mock_master = MagicMock(spec=Master)
+    mock_master.id = 1
+    mock_master.name = "Test Master"
+    mock_master.rating = 4.8
+    return mock_master
 
 @pytest.fixture
 def callback_query(message):
@@ -32,26 +40,28 @@ def callback_query(message):
 
 
 @pytest.fixture
-def service():
-    """Фикстура для создания мок-объекта Service"""
+def service(master):
+    """Фикстура для создания мок-объекта Service с мастерами"""
     mock_service = MagicMock(spec=Service)
     mock_service.id = 1
     mock_service.name = "Test Service"
     mock_service.duration = 30  # Пример продолжительности услуги
+    mock_service.masters = [master]
     return mock_service
 
 
+
 @pytest.fixture
-def mock_db_session():
+def mock_db_session(service):
     """Фикстура для мокирования сессии базы данных"""
     with patch('bot.SessionLocal') as mock_session_local:
         mock_session = MagicMock()
         mock_session_local.return_value.__enter__.return_value = mock_session
 
-        # Мокаем метод query().filter().first() в mock_session
+        # Настраиваем query().filter().first() на возврат mock_service
         mock_query = MagicMock()
         mock_session.query.return_value = mock_query
-        mock_query.filter.return_value.first.return_value = None  # Заглушка для первого запроса
+        mock_query.filter.return_value.first.return_value = service
         yield mock_session
 
 
@@ -220,7 +230,6 @@ async def test_select_service_handler(callback_query, service, mock_db_session):
     )
 
 
-
 @pytest.mark.asyncio
 async def test_select_service_handler_db_query_called(callback_query, service, mock_db_session):
     """Проверка, что запрос к базе данных действительно был выполнен"""
@@ -231,3 +240,311 @@ async def test_select_service_handler_db_query_called(callback_query, service, m
 
     # Проверяем, что был сделан запрос к базе данных
     mock_db_session.query().filter().first.assert_called_once_with()
+
+@pytest.mark.asyncio
+async def test_select_master_handler_with_masters(callback_query, service, master, mock_db_session):
+    """Тестируем обработчик с мастерами"""
+    user_booking_data[callback_query.from_user.id] = {
+        "service_id": service.id,
+    }
+
+    # Вызываем обработчик
+    await select_master_handler(callback_query)
+
+    # Проверяем, что edit_text был вызван с правильными параметрами
+    callback_query.message.edit_text.assert_called_once_with(
+        "Выберите мастера:",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(
+                    text=f"{master.name} (Рейтинг: {master.rating})",
+                    callback_data=f"master_{master.id}"
+                )],
+                [InlineKeyboardButton(text="Назад", callback_data=f"service_{service.id}")],
+                [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")]
+            ]
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_select_master_handler_without_masters(callback_query, service, mock_db_session):
+    """Тестируем обработчик без мастеров (пустой список мастеров)"""
+
+    # Убираем мастеров из услуги
+    service.masters = []
+
+    user_booking_data[callback_query.from_user.id] = {
+        "service_id": service.id,  # Записываем идентификатор услуги в словарь
+    }
+
+    # Вызываем обработчик
+    await select_master_handler(callback_query)
+
+    # Проверяем, что edit_text был вызван с правильными параметрами
+    callback_query.message.edit_text.assert_called_once_with(
+        "Выберите мастера:",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Назад", callback_data=f"service_{service.id}")],
+                [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")]
+            ]
+        )
+    )
+
+
+
+
+@pytest.mark.asyncio
+async def test_select_master_handler_telegram_error(callback_query, service, master, mock_db_session):
+    """Тестируем обработчик, когда возникает ошибка TelegramBadRequest при редактировании сообщения"""
+
+    user_booking_data[callback_query.from_user.id] = {
+        "service_id": service.id,
+    }
+
+    # Мокаем ошибку при редактировании сообщения
+    callback_query.message.edit_text.side_effect = TelegramBadRequest("Telegram server says",
+                                                                      "Detailed error description")
+
+    try:
+        # Вызываем обработчик
+        await select_master_handler(callback_query)
+    except TelegramBadRequest as e:
+        # Проверяем оба аргумента, переданные в исключение
+        assert e.args == ("Telegram server says", "Detailed error description")
+
+        # Проверка, что метод edit_text был вызван с правильными параметрами
+        callback_query.message.edit_text.assert_called_once_with(
+            "Выберите мастера:",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text=f"{master.name} (Рейтинг: {master.rating})",
+                                          callback_data=f"master_{master.id}")],
+                    [InlineKeyboardButton(text="Назад", callback_data=f"service_{service.id}")],
+                    [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")]
+                ]
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_show_calendar_for_master(callback_query):
+    """Тестируем установку master_id для пользователя"""
+
+    # Устанавливаем данные в callback_query
+    master_id = 1
+    callback_query.data = f"master_{master_id}"
+
+    # Инициализируем user_booking_data для пользователя
+    user_booking_data[callback_query.from_user.id] = {}
+
+    # Мокаем функцию show_calendar
+    with patch("bot.show_calendar", new=AsyncMock()) as mock_show_calendar:
+        # Вызываем тестируемую функцию
+        await show_calendar_for_master(callback_query)
+
+        # Проверяем, что master_id обновлён
+        assert user_booking_data[callback_query.from_user.id]["master_id"] == master_id
+
+        # Проверяем, что show_calendar вызвана с корректными параметрами
+        mock_show_calendar.assert_called_once_with(
+            callback_query.message, callback_query.from_user.id, week_offset=0
+        )
+
+@pytest.mark.asyncio
+async def test_show_calendar_no_master_reset_master(callback_query):
+    """Тестируем сброс master_id для существующего пользователя"""
+
+    # Добавляем данные пользователя в user_booking_data
+    user_booking_data[callback_query.from_user.id] = {"master_id": 1}
+
+    # Настраиваем callback_query
+    callback_query.data = "select_time_no_master"
+
+    # Мокаем функцию show_calendar
+    with patch("bot.show_calendar", new=AsyncMock()) as mock_show_calendar:
+        # Вызываем тестируемую функцию
+        await show_calendar_no_master(callback_query)
+
+        # Проверяем, что master_id сброшен
+        assert user_booking_data[callback_query.from_user.id]["master_id"] is None
+
+        # Проверяем, что show_calendar вызвана с корректными параметрами
+        mock_show_calendar.assert_called_once_with(
+            callback_query.message, callback_query.from_user.id, week_offset=0
+        )
+
+@pytest.mark.asyncio
+async def test_show_calendar_no_master_new_user(callback_query):
+    user_id = 12345
+
+    # Убедимся, что данных для пользователя нет
+    if user_id in user_booking_data:
+        del user_booking_data[user_id]
+
+    # Создаём пустую запись для пользователя в user_booking_data
+    user_booking_data[user_id] = {}
+
+    # Настраиваем callback_query
+    callback_query.data = "select_time_no_master"
+
+    # Мок функции show_calendar
+    with patch("bot.show_calendar", new=AsyncMock()) as mock_show_calendar:
+        # Вызов тестируемой функции
+        await show_calendar_no_master(callback_query)
+
+        # Проверка, что данные для пользователя обновлены
+        assert user_booking_data[user_id]["master_id"] is None
+
+        # Проверка, что show_calendar вызвана
+        mock_show_calendar.assert_called_once_with(
+            callback_query.message, user_id, week_offset=0
+        )
+
+
+@pytest.mark.asyncio
+async def test_show_calendar_with_slots(message, mock_db_session):
+    # Настроим данные
+    user_id = 12345
+    week_offset = 0
+
+    # Ensure today is a known fixed date for testing, e.g., Dec 3, 2024
+    today = datetime(2024, 12, 3).date()
+
+    user_booking_data[user_id] = {
+        "service_id": 1,
+        "service_duration": 30,
+        "master_id": None
+    }
+
+    # Настроим возвращаемые слоты (пусть их не будет)
+    mock_db_session.query.return_value.filter.return_value.all.return_value = []
+
+    # Мокируем сообщение как AsyncMock
+    message = AsyncMock()
+
+    # Вызываем функцию
+    await show_calendar(message, user_id, week_offset)
+
+    # Для правильного подсчета даты начала недели (если понедельник является началом недели)
+    start_date = today - timedelta(days=today.weekday())
+    end_date = start_date + timedelta(days=6)
+
+    # Ожидаемое сообщение без года
+    expected_message = f"На неделю с {start_date.strftime('%d.%m')} по {end_date.strftime('%d.%m')} свободных окошек нет."
+
+    # Ожидаемая клавиатура
+    expected_reply_markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="След. неделя ➡️", callback_data="change_week_1")],
+        [InlineKeyboardButton(text="Назад", callback_data="service_1")],
+        [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")]
+    ])
+
+    # Убедимся, что edit_text был вызван один раз с ожидаемыми параметрами
+    message.edit_text.assert_called_once_with(expected_message, reply_markup=expected_reply_markup)
+
+@pytest.mark.asyncio
+async def test_change_week_handler(callback_query):
+    user_id = 12345
+    week_offset = 2
+    callback_query.data = f"change_week_{week_offset}"
+    callback_query.from_user.id = user_id
+    callback_query.message = AsyncMock()
+
+    user_booking_data[user_id] = {"service_id": 1}  # Предварительно записываем данные пользователя
+
+    # Мок для show_calendar
+    with patch("bot.show_calendar", new=AsyncMock()) as mock_show_calendar:
+        await change_week_handler(callback_query)
+
+        # Проверяем, что week_offset сохранился в user_booking_data
+        assert user_booking_data[user_id]["week_offset"] == week_offset
+
+        # Проверяем, что show_calendar вызван с правильными параметрами
+        mock_show_calendar.assert_awaited_once_with(callback_query.message, user_id, week_offset)
+
+
+@pytest.mark.asyncio
+async def test_date_selected_handler_no_booking_data(callback_query, message):
+    """Тест на обработку отсутствия данных в user_booking_data."""
+    callback_query.data = "date_2024-12-03_0"
+    callback_query.message = message()
+    user_id = callback_query.from_user.id
+
+    # Убедимся, что данных для пользователя нет
+    if user_id in user_booking_data:
+        del user_booking_data[user_id]
+
+    # Выполнение
+    await date_selected_handler(callback_query)
+
+    # Проверка
+    callback_query.message.edit_text.assert_awaited_once_with("Ошибка: данные записи не найдены.")
+
+
+@pytest.mark.asyncio
+async def test_date_selected_handler_no_available_slots(callback_query, message, mock_db_session):
+    """Тест на отсутствие доступных слотов."""
+    callback_query.data = "date_2024-12-03_0"
+    callback_query.message = message()
+    user_id = callback_query.from_user.id
+    user_booking_data[user_id] = {
+        "service_id": 1,
+        "service_duration": 30,
+        "master_id": None
+    }
+
+    mock_db_session.query.return_value.filter.return_value.all.return_value = []  # Нет слотов
+
+    # Выполнение
+    await date_selected_handler(callback_query)
+
+    # Проверка
+    expected_text = "Нет доступных слотов на эту дату."
+    expected_keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Назад", callback_data="change_week_0")],
+            [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+        ]
+    )
+    callback_query.message.edit_text.assert_awaited_once_with(expected_text, reply_markup=expected_keyboard)
+
+
+@pytest.mark.asyncio
+async def test_date_selected_handler_with_available_slots(callback_query, message, mock_db_session, master):
+    """Тест на наличие доступных слотов."""
+    # Настройка
+    callback_query.data = "date_2024-12-03_0"
+    callback_query.message = message()
+    user_id = callback_query.from_user.id
+    user_booking_data[user_id] = {
+        "service_id": 1,
+        "service_duration": 30,
+        "master_id": None
+    }
+
+    # Мокируем TimeSlot с мастером
+    mock_slot = MagicMock()
+    mock_slot.id = 1
+    mock_slot.start_time = datetime(2024, 12, 3, 14, 0)
+    mock_slot.master = master
+
+    mock_db_session.query.return_value.filter.return_value.all.return_value = [mock_slot]  # Один слот
+
+    # Выполнение
+    with patch('bot.find_available_slots', return_value=[mock_slot]):
+        await date_selected_handler(callback_query)
+
+    # Проверка
+    expected_text = "Выберите время:"
+    expected_keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="14:00 (Test Master)", callback_data="slot_1"
+            )],
+            [InlineKeyboardButton(text="Назад", callback_data="change_week_0")],
+            [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+        ]
+    )
+    callback_query.message.edit_text.assert_awaited_once_with(expected_text, reply_markup=expected_keyboard)
