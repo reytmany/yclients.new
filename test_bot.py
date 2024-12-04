@@ -3,8 +3,8 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from aiogram import types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from aiogram.exceptions import TelegramBadRequest
-from bot import first_interaction, start_handler, send_main_menu, back_to_menu_handler, select_service_handler, user_booking_data, select_master_handler, show_calendar_for_master, show_calendar_no_master, show_calendar, change_week_handler, date_selected_handler
-from database import Service, Master
+from bot import first_interaction, start_handler, send_main_menu, back_to_menu_handler, select_service_handler, user_booking_data, select_master_handler, show_calendar_for_master, show_calendar_no_master, show_calendar, change_week_handler, date_selected_handler, find_available_slots, confirm_booking_handler, handle_unrecognized_message
+from database import Service, Master, TimeSlot, TimeSlotStatus, Appointment
 from datetime import datetime, timedelta
 
 @pytest.fixture
@@ -63,6 +63,17 @@ def mock_db_session(service):
         mock_session.query.return_value = mock_query
         mock_query.filter.return_value.first.return_value = service
         yield mock_session
+
+@pytest.fixture
+def timeslot():
+    """Фикстура для создания мок-объекта TimeSlot."""
+    def _timeslot(master_id, start_time, status=TimeSlotStatus.free):
+        mock_slot = MagicMock()
+        mock_slot.master_id = master_id
+        mock_slot.start_time = start_time
+        mock_slot.status = status
+        return mock_slot
+    return _timeslot
 
 
 
@@ -545,3 +556,159 @@ async def test_date_selected_handler_with_available_slots(callback_query, messag
         ]
     )
     callback_query.message.edit_text.assert_awaited_once_with(expected_text, reply_markup=expected_keyboard)
+
+
+
+def test_find_available_slots_sufficient_consecutive_slots(timeslot):
+    """Тест на достаточное количество последовательных слотов."""
+    master_id = 1
+    slots = [
+        timeslot(master_id, datetime(2024, 12, 4, 10, 0)),
+        timeslot(master_id, datetime(2024, 12, 4, 10, 15)),
+        timeslot(master_id, datetime(2024, 12, 4, 10, 30)),
+    ]
+    service_duration = 30  # Требуется 2 слота
+    result = find_available_slots(slots, service_duration)
+    assert len(result) == 1
+    assert result[0].start_time == datetime(2024, 12, 4, 10, 0)
+
+
+def test_find_available_slots_insufficient_slots(timeslot):
+    """Тест на недостаточное количество слотов."""
+    master_id = 1
+    slots = [
+        timeslot(master_id, datetime(2024, 12, 4, 10, 0)),
+        timeslot(master_id, datetime(2024, 12, 4, 10, 15)),
+    ]
+    service_duration = 45  # Требуется 3 слота
+    result = find_available_slots(slots, service_duration)
+    assert len(result) == 0
+
+
+def test_find_available_slots_mixed_masters(timeslot):
+    """Тест на наличие разных мастеров в слоте."""
+    slots = [
+        timeslot(1, datetime(2024, 12, 4, 10, 0)),
+        timeslot(2, datetime(2024, 12, 4, 10, 15)),  # Другой мастер
+        timeslot(1, datetime(2024, 12, 4, 10, 30)),
+    ]
+    service_duration = 30  # Требуется 2 слота
+    result = find_available_slots(slots, service_duration)
+    assert len(result) == 0
+
+
+# Тест для обработки корректной записи на время
+@pytest.mark.asyncio
+async def test_confirm_booking_handler_correct(callback_query, message, mock_db_session, timeslot):
+    # Мокируем слот времени
+    user_id = callback_query.from_user.id
+    slot_id = 1
+    service_duration = 30  # длительность услуги
+    master_id = 1
+    start_time = datetime(2024, 12, 4, 14, 0)  # Пример времени начала
+    slot = timeslot(master_id, start_time)
+    slot.id = slot_id  # Присваиваем слот ID
+    slot.master.name = "Test Master"  # Устанавливаем имя мастера
+
+    mock_db_session.query().options().filter().first.return_value = slot
+
+    # Мокаем данные пользователя
+    user_booking_data[user_id] = {
+        'service_name': "Test Service",
+        'service_duration': service_duration
+    }
+
+    # Создаем клавиатуру
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Подтверждаю", callback_data="confirm_booking")],
+            [InlineKeyboardButton(text="Назад", callback_data=f"date_{start_time.date().isoformat()}_0")],
+            [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+        ]
+    )
+
+    # Вызываем обработчик
+    await confirm_booking_handler(callback_query)
+
+    # Проверка, что был вызван метод edit_text с правильным текстом и клавиатурой
+    new_text = (
+        f"Вы хотите записаться на:\n"
+        f"Дата и время: <b>{start_time.strftime('%Y-%m-%d %H:%M')}</b>\n"
+        f"Услуга: <b>Test Service</b>\n"
+        f"Мастер: <b>Test Master</b>\n"
+        f"Все верно?"
+    )
+
+    callback_query.message.edit_text.assert_called_once_with(new_text, reply_markup=keyboard)
+
+# Тест для обработки изменения данных пользователя
+@pytest.mark.asyncio
+async def test_confirm_booking_handler_user_data_update(callback_query, message, mock_db_session, timeslot):
+    # Мокируем слот времени
+    user_id = callback_query.from_user.id
+    slot_id = 1
+    service_duration = 30  # длительность услуги
+    master_id = 1
+    start_time = datetime(2024, 12, 4, 14, 0)  # Пример времени начала
+    slot = timeslot(master_id, start_time)
+    slot.id = slot_id  # Присваиваем слот ID
+    slot.master.name = "Test Master"  # Устанавливаем имя мастера
+    mock_db_session.query().options().filter().first.return_value = slot
+
+    # Мокаем данные пользователя
+    user_booking_data[user_id] = {
+        'service_name': "Test Service",
+        'service_duration': service_duration
+    }
+
+    # Вызываем обработчик
+    await confirm_booking_handler(callback_query)
+
+    # Проверяем, что данные в user_booking_data были обновлены
+    assert user_booking_data[user_id]["slot_id"] == slot_id
+    assert user_booking_data[user_id]["slot_time"] == start_time
+    assert user_booking_data[user_id]["master_id"] == master_id
+
+
+@pytest.mark.asyncio
+async def test_user_has_chosen_service():
+    """Тест на случай, когда пользователь уже выбрал услугу."""
+
+    # Создаем мок-объект для сообщения
+    mock_message = MagicMock(spec=types.Message)
+
+    # Мокаем from_user
+    mock_from_user = MagicMock(spec=types.User)
+    mock_from_user.id = 12345  # Устанавливаем ID пользователя
+    mock_from_user.first_name = "Test User"  # Устанавливаем имя пользователя
+    mock_message.from_user = mock_from_user  # Присваиваем mock_from_user в from_user
+
+    mock_message.text = "Some unrecognized message"  # Мокаем текст сообщения
+    mock_message.answer = AsyncMock()  # Мокаем метод answer
+
+    # Мокаем данные о выборе услуги
+    user_booking_data[12345] = {'service_id': 1}
+
+    # Мокаем наличие услуги в базе данных
+    service = MagicMock(spec=Service)
+    service.id = 1
+    service.name = "Test Service"
+    service.cost = 100
+
+    # Вызовем обработчик
+    await handle_unrecognized_message(mock_message)
+
+    # Ожидаем, что будет отправлено сообщение с нужными кнопками
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Выбрать мастера", callback_data="select_master")],
+            [InlineKeyboardButton(text="Выбрать время (мастер не важен)", callback_data="select_time_no_master")],
+            [InlineKeyboardButton(text="Назад", callback_data="services")],
+            [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")]
+        ]
+    )
+    new_text = "Как вы хотите продолжить?"
+
+    # Проверяем, что метод answer был вызван с правильным текстом и клавиатурой
+    mock_message.answer.assert_any_call("Используйте кнопки для выбора.")
+    mock_message.answer.assert_any_call(new_text, reply_markup=keyboard)
