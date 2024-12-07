@@ -1,5 +1,5 @@
-# Ссылка на отчет по текущему результату: https://docs.google.com/document/d/1vAJbFo7cGsJucHqYi9u0aXsSOXfWLMXnsNAdlpCy30o/edit?tab=t.0
-# Ссылка на видеоотчет https://drive.google.com/file/d/1GIGpVcBtcZBf9B45JH_LCrykROSGBoZc/view?usp=sharing
+# Ссылка на отчет по текущему результату: https://docs.google.com/document/d/15bmDUDjYCl5vhn5LW_7TdkQyO6DLALhfpC8b7yktYtE/edit?tab=t.0
+# Ссылка на видеоотчет https://drive.google.com/drive/folders/1UbhuvSOHTyLenZnsoUlCiW9LeDH59TRO?usp=sharing
 # Проект телеграм бота и сайта для записи в салон красоты
 Мы пишем проект для записи в салон. Проект состоит из трех частей: телеграм бот, веб-сервис и база данных.
 
