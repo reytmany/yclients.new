@@ -1,7 +1,7 @@
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram import Router, F
 from utils.main_menu import send_main_menu
-from utils.data_storage import user_booking_data
+
 
 
 router = Router()

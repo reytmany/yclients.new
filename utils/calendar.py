@@ -1,13 +1,10 @@
-from datetime import datetime, timedelta
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery  # Добавлен CallbackQuery
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from database import SessionLocal, TimeSlot, TimeSlotStatus, master_service_association
 from sqlalchemy.orm import joinedload
-from database import SessionLocal, TimeSlot, TimeSlotStatus, master_service_association, Master
+from datetime import datetime, timedelta
+from aiogram.fsm.context import FSMContext
 
-# Импортируем хранилище данных пользователя
-from handlers.services_handler import user_booking_data
-
-
-async def show_calendar(message, user_id, week_offset):
+async def show_calendar(message: Message, state: FSMContext, week_offset: int):
     # Определяем текущий понедельник
     today = datetime.now().date()
     current_week_start = today - timedelta(days=today.weekday())  # Понедельник текущей недели
@@ -18,12 +15,18 @@ async def show_calendar(message, user_id, week_offset):
     week_start = current_week_start + timedelta(weeks=week_offset)
     week_end = week_start + timedelta(days=6)  # Воскресенье этой недели
 
+    # Получаем данные из состояния
+    data = await state.get_data()
+    service_id = data.get("service_id")
+    service_duration = data.get("service_duration")
+    master_id = data.get("master_id")
+
+    if not service_id or not service_duration:
+        await message.edit_text("Ошибка: данные услуги или длительности отсутствуют. Пожалуйста, начните заново.")
+        return
+
     dates_with_slots = []
     with SessionLocal() as session:
-        service_id = user_booking_data[user_id]["service_id"]
-        service_duration = user_booking_data[user_id]["service_duration"]
-        master_id = user_booking_data[user_id].get("master_id")
-
         # Получаем мастеров, предоставляющих выбранную услугу
         if master_id is None:
             masters = session.query(master_service_association).filter(
@@ -74,7 +77,7 @@ async def show_calendar(message, user_id, week_offset):
         navigation_buttons.append(InlineKeyboardButton(text="След. неделя ➡️", callback_data=f"change_week_{week_offset + 1}"))
 
     # Кнопка "Назад"
-    back_callback = "select_master" if user_booking_data[user_id].get("master_id") is not None else f"service_{user_booking_data[user_id]['service_id']}"
+    back_callback = "select_master" if master_id is not None else f"service_{service_id}"
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=date_buttons + [
@@ -122,68 +125,3 @@ def find_available_slots(slots, service_duration):
         else:
             i += 1
     return available_slots
-
-# Обработчик выбора даты
-
-async def date_selected_handler(callback_query: CallbackQuery):
-    data_parts = callback_query.data.split("_")
-    date_iso = data_parts[1]
-    week_offset = int(data_parts[2])
-    selected_date = datetime.fromisoformat(date_iso).date()
-    user_id = callback_query.from_user.id
-    booking_data = user_booking_data.get(user_id)
-    if not booking_data:
-        await callback_query.message.edit_text("Ошибка: данные записи не найдены.")
-        return
-    master_id = booking_data.get("master_id")
-    service_id = booking_data.get("service_id")
-    service_duration = booking_data.get("service_duration")  # Duration in minutes
-
-    start_datetime = datetime.combine(selected_date, datetime.min.time())
-    end_datetime = start_datetime + timedelta(days=1)
-
-    with SessionLocal() as session:
-        if master_id is None:
-            masters = session.query(Master).join(master_service_association).filter(
-                master_service_association.c.service_id == service_id).all()
-            master_ids = [master.id for master in masters]
-        else:
-            master_ids = [master_id]
-
-        all_slots = session.query(TimeSlot).options(
-            joinedload(TimeSlot.master)
-        ).filter(
-            TimeSlot.master_id.in_(master_ids),
-            TimeSlot.start_time >= start_datetime,
-            TimeSlot.start_time < end_datetime,
-            TimeSlot.status == TimeSlotStatus.free
-        ).order_by(TimeSlot.master_id, TimeSlot.start_time).all()
-
-        available_slots = find_available_slots(all_slots, service_duration)
-
-        if not available_slots:
-            keyboard = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(text="Назад", callback_data=f"change_week_{week_offset}")],
-                    [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
-                ]
-            )
-            new_text = "Нет доступных слотов на эту дату."
-            await callback_query.message.edit_text(new_text, reply_markup=keyboard)
-            return
-
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                                [InlineKeyboardButton(
-                                    text=f"{slot.start_time.strftime('%H:%M')} ({slot.master.name})",
-                                    callback_data=f"slot_{slot.id}"
-                                )]
-                                for slot in available_slots
-                            ] + [
-                                [InlineKeyboardButton(text="Назад", callback_data=f"change_week_{week_offset}")],
-                                [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
-                            ]
-        )
-
-    new_text = "Выберите время:"
-    await callback_query.message.edit_text(new_text, reply_markup=keyboard)

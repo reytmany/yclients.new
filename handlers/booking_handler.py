@@ -1,31 +1,27 @@
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from database import SessionLocal, TimeSlot, User, Appointment, TimeSlotStatus, Master, master_service_association
-from datetime import timedelta, datetime
-from utils.data_storage import user_booking_data
 from aiogram import Router, F
-from sqlalchemy.orm import joinedload
+from database import SessionLocal, Appointment, User, TimeSlot, TimeSlotStatus
+
+from states import BookingStates
 
 router = Router()
 
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from database import SessionLocal, TimeSlot, Master, master_service_association, TimeSlotStatus
+from datetime import datetime, timedelta
+from aiogram.fsm.context import FSMContext
+from utils.calendar import find_available_slots
+import logging
+
 @router.callback_query(F.data.startswith("date_"))
-async def date_selected_handler(callback_query: CallbackQuery):
+async def date_selected_handler(callback_query: CallbackQuery, state: FSMContext):
     user_id = callback_query.from_user.id
-    data_parts = callback_query.data.split("_")
+    logging.info(f"Handling date selection for user_id {user_id}")
 
-    try:
-        date_iso = data_parts[1]
-        week_offset = int(data_parts[2])
-        selected_date = datetime.fromisoformat(date_iso).date()
-    except Exception as e:
-        await callback_query.message.edit_text("Ошибка обработки даты.")
-        print(f"Error parsing date: {e}")
-        return
+    # Получение данных из FSMContext
+    booking_data = await state.get_data()
 
-    booking_data = user_booking_data.get(user_id)
-
-    # Проверка данных записи
     if not booking_data:
-        print(f"Ошибка: данные записи отсутствуют для user_id {user_id}")
+        logging.error(f"Booking data not found for user_id {user_id}")
         await callback_query.message.edit_text(
             "Ошибка: данные записи не найдены. Пожалуйста, начните заново.",
             reply_markup=InlineKeyboardMarkup(
@@ -36,6 +32,19 @@ async def date_selected_handler(callback_query: CallbackQuery):
         )
         return
 
+    # Извлечение данных из callback_data
+    data_parts = callback_query.data.split("_")
+    try:
+        date_iso = data_parts[1]
+        week_offset = int(data_parts[2])
+        selected_date = datetime.fromisoformat(date_iso).date()
+        logging.info(f"Selected date: {selected_date}, week_offset: {week_offset}")
+    except Exception as e:
+        logging.error(f"Error parsing date data for user_id {user_id}: {e}")
+        await callback_query.message.edit_text("Ошибка обработки даты.")
+        return
+
+    # Данные из FSMContext
     master_id = booking_data.get("master_id")
     service_id = booking_data.get("service_id")
     service_duration = booking_data.get("service_duration")
@@ -43,162 +52,180 @@ async def date_selected_handler(callback_query: CallbackQuery):
     start_datetime = datetime.combine(selected_date, datetime.min.time())
     end_datetime = start_datetime + timedelta(days=1)
 
+    # Поиск доступных слотов
     with SessionLocal() as session:
-        if master_id is None:
-            masters = session.query(Master).join(master_service_association).filter(
-                master_service_association.c.service_id == service_id).all()
-            master_ids = [master.id for master in masters]
-        else:
-            master_ids = [master_id]
+        try:
+            if master_id is None:
+                masters = session.query(Master).join(master_service_association).filter(
+                    master_service_association.c.service_id == service_id
+                ).all()
+                master_ids = [master.id for master in masters]
+            else:
+                master_ids = [master_id]
 
-        all_slots = session.query(TimeSlot).filter(
-            TimeSlot.master_id.in_(master_ids),
-            TimeSlot.start_time >= start_datetime,
-            TimeSlot.start_time < end_datetime,
-            TimeSlot.status == TimeSlotStatus.free
-        ).order_by(TimeSlot.start_time).all()
+            all_slots = session.query(TimeSlot).filter(
+                TimeSlot.master_id.in_(master_ids),
+                TimeSlot.start_time >= start_datetime,
+                TimeSlot.start_time < end_datetime,
+                TimeSlot.status == TimeSlotStatus.free
+            ).order_by(TimeSlot.start_time).all()
 
-        available_slots = find_available_slots(all_slots, service_duration)
-
-        if not available_slots:
-            keyboard = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(text="Назад", callback_data=f"change_week_{week_offset}")],
-                    [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
-                ]
-            )
-            await callback_query.message.edit_text("Нет доступных слотов на эту дату.", reply_markup=keyboard)
+            available_slots = find_available_slots(all_slots, service_duration)
+            logging.info(f"Found {len(available_slots)} available slots for user_id {user_id}")
+        except Exception as e:
+            logging.error(f"Error fetching slots for user_id {user_id}: {e}")
+            await callback_query.message.edit_text("Ошибка при загрузке доступных слотов.")
             return
 
+    if not available_slots:
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(
-                    text=f"{slot.start_time.strftime('%H:%M')} ({slot.master.name})",
-                    callback_data=f"slot_{slot.id}"
-                )]
-                for slot in available_slots
-            ] + [
                 [InlineKeyboardButton(text="Назад", callback_data=f"change_week_{week_offset}")],
                 [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
             ]
         )
+        await callback_query.message.edit_text("Нет доступных слотов на эту дату.", reply_markup=keyboard)
+        return
+
+    # Формирование клавиатуры с доступными слотами
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text=f"{slot.start_time.strftime('%H:%M')} ({slot.master.name})",
+                callback_data=f"slot_{slot.id}"
+            )]
+            for slot in available_slots
+        ] + [
+            [InlineKeyboardButton(text="Назад", callback_data=f"change_week_{week_offset}")],
+            [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+        ]
+    )
 
     await callback_query.message.edit_text("Выберите время:", reply_markup=keyboard)
 
+
+
 @router.callback_query(F.data.startswith("slot_"))
-async def confirm_booking_handler(callback_query: CallbackQuery):
+async def confirm_booking_handler(callback_query: CallbackQuery, state: FSMContext):
     slot_id = int(callback_query.data.split("_")[1])
-    user_id = callback_query.from_user.id
 
     with SessionLocal() as session:
-        slot = session.query(TimeSlot).options(joinedload(TimeSlot.master)).filter(TimeSlot.id == slot_id).first()
-        if not slot:
-            await callback_query.message.edit_text("Ошибка: слот не найден.")
-            return
+        slot = session.query(TimeSlot).filter(TimeSlot.id == slot_id).first()
 
-        user_booking_data[user_id].update({
-            "slot_id": slot_id,
-            "slot_time": slot.start_time,
-            "master_id": slot.master_id
-        })
+    await state.update_data(slot_id=slot_id, slot_time=slot.start_time)
 
-        master_name = slot.master.name
-        service_name = user_booking_data[user_id].get("service_name")
-        week_offset = user_booking_data[user_id].get('week_offset', 0)
+    data = await state.get_data()
+    service_name = data["service_name"]
+    slot_time = slot.start_time.strftime('%Y-%m-%d %H:%M')
+    week_offset = data.get("week_offset", 0)
 
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="Подтверждаю", callback_data="confirm_booking")],
-                [InlineKeyboardButton(text="Назад", callback_data=f"date_{slot.start_time.date().isoformat()}_{week_offset}")],
-                [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
-            ]
-        )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Подтверждаю", callback_data="confirm_booking")],
+            [InlineKeyboardButton(text="Назад", callback_data="previous_step")],
+            [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+        ]
+    )
+    await state.set_state(BookingStates.confirming)
+    await callback_query.message.edit_text(
+        f"Вы хотите записаться на:\nУслуга: {service_name}\nВремя: {slot_time}\nВсе верно?",
+        reply_markup=keyboard
+    )
 
-        await callback_query.message.edit_text(
-            f"Вы хотите записаться на:\n"
-            f"Дата и время: <b>{slot.start_time.strftime('%Y-%m-%d %H:%M')}</b>\n"
-            f"Услуга: <b>{service_name}</b>\n"
-            f"Мастер: <b>{master_name}</b>\n"
-            f"Все верно?",
-            reply_markup=keyboard
-        )
 
 
 @router.callback_query(F.data == "confirm_booking")
-async def save_booking(callback_query: CallbackQuery):
-    user_id = callback_query.from_user.id
-    booking_data = user_booking_data.get(user_id)
+async def save_booking(callback_query: CallbackQuery, state: FSMContext):
+    # Получение данных из состояния FSM
+    data = await state.get_data()
 
-    if not booking_data:
-        await callback_query.message.edit_text("Ошибка: данные записи не найдены.")
+    service_id = data.get("service_id")
+    master_id = data.get("master_id")
+    slot_id = data.get("slot_id")
+    service_duration = data.get("service_duration")
+
+    # Проверка на неполноту данных
+    if not service_id or not master_id or not slot_id or not service_duration:
+        await callback_query.message.edit_text(
+            "Ошибка: данные записи неполны. Пожалуйста, начните заново.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")]
+                ]
+            )
+        )
         return
-
-    slot_id = booking_data.get("slot_id")
-    if not slot_id:
-        await callback_query.message.edit_text("Ошибка: слот не найден.")
-        return
-
-    service_id = booking_data.get("service_id")
-    service_duration = booking_data.get("service_duration")
-    master_id = booking_data.get("master_id")
 
     with SessionLocal() as session:
-        starting_slot = session.query(TimeSlot).options(joinedload(TimeSlot.master)).filter(
-            TimeSlot.id == slot_id).first()
-        if not starting_slot:
-            await callback_query.message.edit_text("Слот больше недоступен.")
+        # Проверяем наличие слота
+        slot = session.query(TimeSlot).filter(TimeSlot.id == slot_id).first()
+        if not slot or slot.status != TimeSlotStatus.free:
+            await callback_query.message.edit_text(
+                "Извините, выбранное время больше недоступно.",
+                reply_markup=InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="Назад", callback_data="back_to_menu")]
+                    ]
+                )
+            )
             return
 
-        slots_query = session.query(TimeSlot).filter(
-            TimeSlot.start_time >= starting_slot.start_time,
-            TimeSlot.start_time < starting_slot.start_time + timedelta(minutes=service_duration),
+        # Бронируем слоты
+        required_slots = service_duration // 15
+        slots_to_book = session.query(TimeSlot).filter(
             TimeSlot.master_id == master_id,
+            TimeSlot.start_time >= slot.start_time,
+            TimeSlot.start_time < slot.start_time + timedelta(minutes=service_duration),
             TimeSlot.status == TimeSlotStatus.free
-        )
+        ).order_by(TimeSlot.start_time).all()
 
-        slots_to_book = slots_query.order_by(TimeSlot.start_time).all()
-        if len(slots_to_book) < service_duration // 15:
-            await callback_query.message.edit_text("Недостаточно слотов для бронирования.")
+        if len(slots_to_book) < required_slots:
+            await callback_query.message.edit_text(
+                "Извините, выбранное время больше недоступно.",
+                reply_markup=InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")]
+                    ]
+                )
+            )
             return
 
-        for slot in slots_to_book:
-            slot.status = TimeSlotStatus.booked
+        for s in slots_to_book:
+            s.status = TimeSlotStatus.booked
 
+        # Проверяем, существует ли пользователь
+        user_id = callback_query.from_user.id
         user = session.query(User).filter(User.telegram_id == str(user_id)).first()
         if not user:
             user = User(telegram_id=str(user_id))
             session.add(user)
 
+        # Создаем запись на прием
         appointment = Appointment(
             user_id=user.id,
             master_id=master_id,
             service_id=service_id,
-            timeslot_id=starting_slot.id,
-            status='scheduled'
+            timeslot_id=slot.id,
+            status="scheduled"
         )
         session.add(appointment)
+
+        # Фиксируем изменения
         session.commit()
 
-        await callback_query.message.edit_text(
-            f"Запись подтверждена на {starting_slot.start_time.strftime('%Y-%m-%d %H:%M')}.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")]
-            ])
+        # Подготовка сообщения о подтверждении
+        confirmation_message = (
+            f"Вы успешно записаны на:\n"
+            f"Дата: {slot.start_time.strftime('%Y-%m-%d %H:%M')}\n"
+            f"Услуга: {data['service_name']}\n"
+            f"Мастер: {slot.master.name}"
         )
 
-
-def find_available_slots(slots, service_duration):
-    required_slots = service_duration // 15
-    available_slots = []
-
-    i = 0
-    while i < len(slots):
-        if len(slots[i:i + required_slots]) < required_slots:
-            break
-
-        if all(slots[j].status == TimeSlotStatus.free for j in range(i, i + required_slots)):
-            available_slots.append(slots[i])
-            i += required_slots
-        else:
-            i += 1
-    return available_slots
+    # Отправляем сообщение пользователю
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")]
+        ]
+    )
+    await state.clear()
+    await callback_query.message.edit_text(confirmation_message, reply_markup=keyboard)

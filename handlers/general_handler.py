@@ -1,16 +1,17 @@
-from aiogram.types import Message, CallbackQuery
 from aiogram import Router
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from utils.data_storage import user_booking_data
+from aiogram.fsm.context import FSMContext
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from database import SessionLocal, Service
+
 
 
 # Инициализация роутера
 router = Router()
 
 @router.message()
-async def handle_unrecognized_message(message: Message):
+async def handle_unrecognized_message(message: Message, state: FSMContext):
     user_id = message.from_user.id
-    booking_data = user_booking_data.get(user_id)
+    booking_data = await state.get_data()  # Получаем данные из FSMContext
 
     if booking_data and 'service_id' in booking_data:
         # Пользователь уже выбрал услугу, предлагаем ему выбрать, как продолжить
@@ -31,12 +32,12 @@ async def handle_unrecognized_message(message: Message):
             services = session.query(Service).all()
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
-                                    [InlineKeyboardButton(text=f"{service.name} - {service.cost} руб.",
-                                                          callback_data=f"service_{service.id}")]
-                                    for service in services
-                                ] + [
-                                    [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
-                                ]
+                    [InlineKeyboardButton(text=f"{service.name} - {service.cost} руб.",
+                                          callback_data=f"service_{service.id}")]
+                    for service in services
+                ] + [
+                    [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+                ]
             )
         new_text = "Выберите услугу:"
         await message.answer("Используйте кнопки для выбора.")
