@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анкеты мастеров</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 20px;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #ffe4e1;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            height: 100vh;
+            padding: 20px;
+        }
+
+        .masters-container {
+            background-color: #fff;
+            display: flex;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            margin-top: 30px;
+            font-size: 30px;
+        }
+
+        .masters-container h2 {
+            margin-bottom: 20px;
+            font-size: 27px;
+            text-align: center;
+            color: #333;
+        }
+
+        .master-cards {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        .master-card {
+            background-color: #f9f9f9;
+            padding: 5px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            font-size: 27px;
+            text-align: left;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .master-card h3 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        .master-card p {
+            margin: 10px 0;
+            font-size: 27px;
+            color: #555;
+        }
+
+        .master-card a {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 10px 10px;
+            background-color: #d3d3d3;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .master-card a:hover {
+            background-color: #ffc0cb;
+        }
+
+        .add-master-button {
+            background-color: #d3d3d3;
+            color: #fff;
+            border: none;
+            padding: 20px;
+            width: ;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            font-size: 30px;
+            text-align: center;
+            text-decoration: none;
+        }
+
+        .add-master-button:hover {
+            background-color: #ffc0cb;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="masters-container">
+    <h2>Анкеты мастеров</h2>
+    <div class="master-cards">
+        {% for master in masters %}
+        <div class="master-card">
+            <h3>{{ master.name }}</h3>
+            <p>Рейтинг: {{ master.rating }}/5</p>
+            <div>
+                <a href="/reviews/master{{ master.id }}/true">Отзывы</a>
+                <a href="/schedule/master{{ master.id }}/true">Расписание</a>
+            </div>
+        </div>
+        {% endfor %}
+        <a href="/add-master" class="add-master-button">Добавить мастера</a>
+    </div>
+</div>
+</body>
+</html>

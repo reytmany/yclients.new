@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Расписание {{ username }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #ffe4e1;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            height: 100vh;
+        }
+
+        .schedule-container {
+            background-color: #fff;
+            padding: 20px 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            width: 1500px;
+        }
+
+        .schedule-container h2 {
+            margin-bottom: 30px;
+            font-size: 30px;
+            color: #333;
+        }
+
+        .schedule-container ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .schedule-container li {
+            background-color: #f9f9f9;
+            margin-bottom: 10px;
+            font-size: 27px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .schedule-container p {
+            font-size: 27px;
+            margin-bottom: 20px;
+            text-align: left;
+            color: #555;
+        }
+        .schedule-container a {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 26px;
+            background-color: #d3d3d3;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .schedule-container a:hover {
+            background-color: #ffc0cb;
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="schedule-container">
+    <h2>Расписание {{ username }}</h2>
+    {% if schedule %}
+    <ul>
+        {% for item in schedule %}
+            <li>{{ item }}</li>
+        {% endfor %}
+    </ul>
+    {% else %}
+        <p>Записей пока нет.</p>
+    {% endif %}
+    {% if is_admin %}
+    <a href="/masters">Назад</a>
+    {% else %}
+    <a href="/lkmasters/{{ username }}">Назад</a>
+    {% endif %}
+</div>
+
+</body>
+</html>
