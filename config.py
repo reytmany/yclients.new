@@ -1,6 +1,8 @@
 #config.py
 
-API_TOKEN = '7576874796:AAHuxsjia58-Zge-AlxE_5Zd-cPJhSlawyM'
+API_TOKEN = 'API_TOKEN' # ?
+
+# TODO: API_TOKEN -> .env -> .gitignore
 
 import os
 
