@@ -86,8 +86,8 @@ async def test_show_calendar_with_slots(message, mock_db_session):
     user_id = 12345
     week_offset = 0
 
-    # Ensure today is a known fixed date for testing, e.g., Dec 3, 2024
-    today = datetime(2024, 12, 3).date()
+    # Получаем сегодняшнюю дату
+    today = datetime.today().date()
 
     user_booking_data[user_id] = {
         "service_id": 1,
