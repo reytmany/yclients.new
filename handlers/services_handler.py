@@ -6,6 +6,8 @@ from database import SessionLocal, Service, Master, TimeSlot, TimeSlotStatus, ma
 import logging
 from datetime import datetime, timedelta
 
+from master_bot import delete_send_telegram_notification
+
 from utils.calendar import show_calendar
 
 # Создаем роутер
@@ -167,7 +169,6 @@ async def cancel_booking_handler(callback_query: CallbackQuery):
         if not booking:
             await callback_query.answer("Запись не найдена или уже отменена.", show_alert=True)
             return
-
         # Помечаем запись как отменённую
         booking.status = "cancelled"
 
@@ -189,10 +190,12 @@ async def cancel_booking_handler(callback_query: CallbackQuery):
             TimeSlot.start_time < end_time,
             TimeSlot.status == TimeSlotStatus.booked
         ).order_by(TimeSlot.start_time).all()
-
+        print(booking.master_id, booking.user.telegram_id,
+                                                booking.timeslot.start_time, booking.service.name)
         for slot in booked_slots:
             slot.status = TimeSlotStatus.free  # Освобождаем слот
-
+        await delete_send_telegram_notification(booking.master_id, booking.user.telegram_id,
+                                                booking.timeslot.start_time, booking.service.name)
         session.commit()
 
     # Обновляем список записей
