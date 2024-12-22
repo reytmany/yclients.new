@@ -37,7 +37,7 @@ async def login_user(
         return RedirectResponse(url="/masters", status_code=302)
     elif master:
         return RedirectResponse(url=f"/lkmasters/{master.login}", status_code=302)
-    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверное имя пользователя или пароль"}, status_code=200)
+    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверное имя пользователя или пароль"})
 
 # регистрация администратора
 @app.post("/register-admin", response_class=HTMLResponse)
@@ -47,7 +47,7 @@ async def register_admin(request: Request, login: str = Form(...), password: str
         return templates.TemplateResponse("login.html", {
             "request": request,
             "error": "Администратор с таким именем уже существует."
-        }, status_code=200)
+        })
     new_admin = Admin(login=login, password=password)
     db.add(new_admin)
     db.commit()
@@ -284,7 +284,6 @@ async def add_master_form(request: Request, db: Session = Depends(get_db)):
         "password": password,
         "services": services
     })
-
 # добавление
 @app.post("/add-master")
 async def save_master(
@@ -292,12 +291,13 @@ async def save_master(
     telegram_id: int = Form(...),
     login: str = Form(...),
     password: str = Form(...),
-    services: list[int] = Form(...),
+    services: list[int] = Form([]),
     db: Session = Depends(get_db)
 ):
     new_master = Master(name=name, telegram_id=telegram_id, login=login, password=password, services=[])
-    selected_services = db.query(Service).filter(Service.id.in_(services)).all()
-    new_master.services.extend(selected_services)
+    if services:
+        selected_services = db.query(Service).filter(Service.id.in_(services)).all()
+        new_master.services.extend(selected_services)
     db.add(new_master)
     db.commit()
     return RedirectResponse(url="/masters", status_code=302)
@@ -306,7 +306,7 @@ async def save_master(
 @app.get("/add-service", response_class=HTMLResponse)
 async def get_add_service_form(request: Request):
     return templates.TemplateResponse("addservice.html", {"request": request})
-# ready
+#
 @app.post("/add-service")
 async def add_service(
     request: Request,
