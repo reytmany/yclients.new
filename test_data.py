@@ -24,11 +24,11 @@ def setup_test_data():
         session.commit()
 
         # Создаем мастеров и связываем их с услугами
-        master1 = Master(name="Марина", rating=4.5)
+        master1 = Master(name="Марина", login="master1", password="abcdefgh", telegram_id='1', total_rating=0, num_reviews=0)
         master1.services.extend([service1])
-        master2 = Master(name="Анна", rating=4.0)
+        master2 = Master(name="Анна", login="master2", password="pass1234", telegram_id='23', total_rating=0, num_reviews=0)
         master2.services.extend([service2, service3])
-        master3 = Master(name="Яна", rating=4.3)
+        master3 = Master(name="Яна", login="master3", password="123passw", telegram_id='837', total_rating=0, num_reviews=0)
         master3.services.extend([service2, service3])
         session.add_all([master1, master2, master3])
         session.commit()
@@ -58,5 +58,3 @@ def setup_test_data():
 
 if __name__ == "__main__":
     setup_test_data()
-
-
