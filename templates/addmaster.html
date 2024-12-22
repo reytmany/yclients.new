@@ -37,7 +37,8 @@
             flex-direction: column;
         }
 
-        .form-container input {
+        .form-container input,
+        .form-container select {
             margin-bottom: 10px;
             padding: 10px;
             border: 1px solid #ccc;
@@ -58,6 +59,29 @@
         .form-container button:hover {
             background-color: #ffc0cb;
         }
+
+        .services-container {
+            text-align: left;
+            margin-bottom: 20px;
+        }
+
+        .services-container h3 {
+            font-size: 20px;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .services-container label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 18px;
+        }
+
+        .generated-info {
+            margin-top: 20px;
+            font-size: 20px;
+            color: #333;
+        }
     </style>
 </head>
 <body>
@@ -65,10 +89,28 @@
 <div class="form-container">
     <h2>Добавить мастера</h2>
     <form action="/add-master" method="post">
-        <input type="text" name="name" placeholder="имя" required>
-        <button type="submit">Добавить</button>
+        <input type="text" name="name" placeholder="Имя мастера" required>
+        <input type="text" name="telegram_id" placeholder="Telegram id мастера" required>
+        <div class="services-container">
+            <h3>Выберите предоставляемые услуги:</h3>
+            {% for service in services %}
+            <label>
+                <input type="checkbox" name="services" value="{{ service.id }}">
+                {{ service.name }} (₽{{ service.price }}, {{ service.duration }} мин.)
+            </label>
+            {% endfor %}
+        </div>
+
+        {% if login and password %}
+        <div class="generated-info">
+            <p>Сгенерированный логин мастера: {{ login }}</p>
+            <input type="hidden" name="login" value="{{ login }}">
+            <p>Сгенерированный пароль мастера: {{ password }}</p>
+            <input type="hidden" name="password" value="{{ password }}">
+        </div>
+        {% endif %}
+        <button type="submit">Добавить мастера</button>
     </form>
 </div>
-
 </body>
 </html>
