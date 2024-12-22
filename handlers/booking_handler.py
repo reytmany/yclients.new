@@ -245,7 +245,6 @@ async def save_booking(callback_query: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
         ]
     )
-    await insertion_send_telegram_notification(master_id, user_telegram_id, data)
     await callback_query.message.edit_text(
         f"Вы успешно записались на:\n"
         f"Услуга: {service_name}\n"
@@ -253,6 +252,7 @@ async def save_booking(callback_query: CallbackQuery, state: FSMContext):
         f"Вы хотите добавить запись в календарь?",
         reply_markup=keyboard
     )
+    await insertion_send_telegram_notification(master_id, user_telegram_id, data)
 
 
 from icalendar import Calendar, Event

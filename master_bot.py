@@ -63,12 +63,13 @@ async def insertion_send_telegram_notification(master_id, user_telegram_id, book
         except Exception as e:
             pass
 
-async def delete_send_telegram_notification(master_telegram_id, user_id, booking_data):
+async def delete_send_telegram_notification(master_id, user_id, slot_time, service_name):
     async with Bot(token=API_TOKEN) as master_bot:
+        master_telegram_id = await get_telegram_id_by_master_id(master_id)
         name = await get_username_by_telegram_id(user_id)
         message = (
-            f"У вас отмена записи на {booking_data['slot_time'].strftime('%d-%m %H:%M')}\n" 
-            f"Услуга: {booking_data['service_name']}\n"
+            f"У вас отмена записи на {slot_time.strftime('%d-%m %H:%M')}\n" 
+            f"Услуга: {service_name}\n"
             f"Клиент: {name}"
         )
         try:
