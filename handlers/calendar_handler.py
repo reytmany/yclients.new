@@ -29,7 +29,7 @@ async def date_selected_handler(callback_query: CallbackQuery, state: FSMContext
     master_id = data.get("master_id")
     service_id = data.get("service_id")
     service_duration = data.get("service_duration")
-
+    print(data)
     if not service_id or not service_duration:
         await callback_query.message.edit_text(
             "Ошибка: данные записи отсутствуют. Пожалуйста, начните заново.",
@@ -55,17 +55,18 @@ async def date_selected_handler(callback_query: CallbackQuery, state: FSMContext
         else:
             master_ids = [master_id]
 
-        all_slots = session.query(TimeSlot).options(
-            joinedload(TimeSlot.master)  # Заранее загружаем мастера
-        ).filter(
-            TimeSlot.master_id.in_(master_ids),
-            TimeSlot.start_time >= start_datetime,
-            TimeSlot.start_time < end_datetime,
-            TimeSlot.status == TimeSlotStatus.free
-        ).order_by(TimeSlot.start_time).all()
+        available_slots = []
+        for master_id in master_ids:
+            print(master_id)
+            all_slots = session.query(TimeSlot).filter(
+                TimeSlot.master_id == master_id,
+                TimeSlot.start_time >= start_datetime,
+                TimeSlot.start_time < end_datetime,
+                TimeSlot.status == TimeSlotStatus.free
+            ).order_by(TimeSlot.start_time).all()
+            for slot in find_available_slots(all_slots, service_duration):
+                available_slots.append(slot)
 
-        # Преобразуем слоты для предотвращения ленивой загрузки за пределами сессии
-        available_slots = find_available_slots(all_slots, service_duration)
         available_slots = [
             {
                 "start_time": slot.start_time,

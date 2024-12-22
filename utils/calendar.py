@@ -38,6 +38,8 @@ async def show_calendar(message: Message, state: FSMContext, week_offset: int):
 
         for i in range(7):  # Проходим по дням недели
             date = week_start + timedelta(days=i)
+            if date < today:
+                continue
             start_datetime = datetime.combine(date, datetime.min.time())
             end_datetime = start_datetime + timedelta(days=1)
 
@@ -114,14 +116,12 @@ def find_available_slots(slots, service_duration):
         is_consecutive = True
         for j in range(required_slots - 1):
             if (consecutive_slots[j + 1].start_time != consecutive_slots[j].start_time + timedelta(minutes=15) or
-                    consecutive_slots[j + 1].status != TimeSlotStatus.free or
-                    consecutive_slots[j + 1].master_id != master_id):
+                    consecutive_slots[j + 1].status != TimeSlotStatus.free):
                 is_consecutive = False
                 break
 
         if is_consecutive:
-            available_slots.append(consecutive_slots[0])
-            i += required_slots  # Пропускаем проверенные слоты
-        else:
-            i += 1
+            if consecutive_slots[0].start_time > (datetime.utcnow() + timedelta(hours=2, minutes=45)):
+                available_slots.append(consecutive_slots[0])
+        i += 1
     return available_slots

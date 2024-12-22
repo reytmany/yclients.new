@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from database import SessionLocal, Appointment, User, TimeSlot, TimeSlotStatus
-
+from sqlalchemy.orm import joinedload
 from states import BookingStates
 
 router = Router()
@@ -62,15 +62,19 @@ async def date_selected_handler(callback_query: CallbackQuery, state: FSMContext
                 master_ids = [master.id for master in masters]
             else:
                 master_ids = [master_id]
+            available_slots = []
+            for master_id in master_ids:
+                print(master_id)
+                all_slots = session.query(TimeSlot).filter(
+                    TimeSlot.master_id == master_id,
+                    TimeSlot.start_time >= start_datetime,
+                    TimeSlot.start_time < end_datetime,
+                    TimeSlot.status == TimeSlotStatus.free
+                ).order_by(TimeSlot.start_time).all()
 
-            all_slots = session.query(TimeSlot).filter(
-                TimeSlot.master_id.in_(master_ids),
-                TimeSlot.start_time >= start_datetime,
-                TimeSlot.start_time < end_datetime,
-                TimeSlot.status == TimeSlotStatus.free
-            ).order_by(TimeSlot.start_time).all()
+            for slot in find_available_slots(all_slots, service_duration):
+                available_slots.append(slot)
 
-            available_slots = find_available_slots(all_slots, service_duration)
             logging.info(f"Found {len(available_slots)} available slots for user_id {user_id}")
         except Exception as e:
             logging.error(f"Error fetching slots for user_id {user_id}: {e}")
@@ -110,9 +114,9 @@ async def confirm_booking_handler(callback_query: CallbackQuery, state: FSMConte
     slot_id = int(callback_query.data.split("_")[1])
 
     with SessionLocal() as session:
-        slot = session.query(TimeSlot).filter(TimeSlot.id == slot_id).first()
+        slot = session.query(TimeSlot).options(joinedload(TimeSlot.master)).filter(TimeSlot.id == slot_id).first()
 
-    await state.update_data(slot_id=slot_id, slot_time=slot.start_time)
+    await state.update_data(slot_id=slot_id, slot_time=slot.start_time, master_id=slot.master.id)
 
     data = await state.get_data()
     service_name = data["service_name"]
@@ -199,6 +203,7 @@ async def save_booking(callback_query: CallbackQuery, state: FSMContext):
         if not user:
             user = User(telegram_id=str(user_id))
             session.add(user)
+            session.commit()
 
         # Создаем запись на прием
         appointment = Appointment(
@@ -229,3 +234,58 @@ async def save_booking(callback_query: CallbackQuery, state: FSMContext):
     )
     await state.clear()
     await callback_query.message.edit_text(confirmation_message, reply_markup=keyboard)
+    slot_time = data["slot_time"]
+    service_name = data["service_name"]
+    await state.update_data(slot_time=slot.start_time, service_name=data["service_name"], service_duration=data["service_duration"])
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Добавить в календарь", callback_data="add_to_calendar")],
+            [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+        ]
+    )
+    await callback_query.message.edit_text(
+        f"Вы успешно записались на:\n"
+        f"Услуга: {service_name}\n"
+        f"Время: {slot_time.strftime('%Y-%m-%d %H:%M')}\n"
+        f"Вы хотите добавить запись в календарь?",
+        reply_markup=keyboard
+    )
+
+
+from icalendar import Calendar, Event
+from aiogram.types import FSInputFile
+from io import BytesIO
+
+from urllib.parse import urlencode
+
+@router.callback_query(F.data == "add_to_calendar")
+async def add_to_calendar(callback_query: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    slot_time = data.get("slot_time")
+    service_name = data.get("service_name")
+    service_duration = data.get("service_duration")
+
+    if not slot_time or not service_name:
+        await callback_query.message.edit_text("Ошибка: данные записи неполные. Пожалуйста, начните заново.")
+        return
+
+    # Генерация ссылки на Google Calendar
+    start_time = slot_time.strftime("%Y%m%dT%H%M%S")
+    end_time = (slot_time + timedelta(minutes=service_duration)).strftime("%Y%m%dT%H%M%S")
+    query = urlencode({
+        "action": "TEMPLATE",
+        "text": f"Запись на услугу: {service_name}",
+        "dates": f"{start_time}/{end_time}",
+        "details": f"Вы записаны на {service_name} в {slot_time.strftime('%H:%M')}.",
+        "trp": "false",
+    })
+    calendar_link = f"https://www.google.com/calendar/render?{query}"
+
+    # Отправка ссылки пользователю
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Добавить в Google Calendar", url=calendar_link)],
+            [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
+        ]
+    )
+    await callback_query.message.edit_text("Добавьте запись в ваш календарь:", reply_markup=keyboard)

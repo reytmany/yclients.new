@@ -36,12 +36,12 @@ def setup_test_data():
 
         masters = session.query(Master).all()
         today = datetime.now()
-        next_week_start = today + timedelta(days=(7 - today.weekday()))
+        next_week_start = today - timedelta(days=(today.weekday()))
         next_week_end = next_week_start + timedelta(days=6)
 
         for master in masters:
             current_date = next_week_start
-            while current_date <= next_week_end:
+            while current_date <= next_week_end + timedelta(days=14):
                 current_time = current_date.replace(hour=9, minute=0, second=0, microsecond=0)
                 end_time = current_date.replace(hour=19, minute=0, second=0, microsecond=0)
                 while current_time < end_time:
@@ -51,7 +51,11 @@ def setup_test_data():
                         status=TimeSlotStatus.free
                     ))
                     current_time += timedelta(minutes=15)
-                current_date += timedelta(days=1)
+                    print(current_time)
+                if current_date > today:
+                    current_date += timedelta(days=2)
+                else:
+                    current_date += timedelta(days=1)
         session.commit()
 
     print("Тестовые данные обновлены.")

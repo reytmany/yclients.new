@@ -4,6 +4,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardBut
 from sqlalchemy.orm import joinedload
 from database import SessionLocal, Service, Master, TimeSlot, TimeSlotStatus, master_service_association, User, Appointment
 import logging
+from datetime import datetime, timedelta
 
 from utils.calendar import show_calendar
 
@@ -123,7 +124,11 @@ async def my_bookings_handler(callback_query: CallbackQuery):
             joinedload(Appointment.timeslot).joinedload(TimeSlot.master),
             joinedload(Appointment.service),
             joinedload(Appointment.master)
-        ).filter(Appointment.user_id == user.id).all()
+        ).join(Appointment.timeslot).filter(
+            Appointment.user_id == user.id,
+            TimeSlot.start_time > (datetime.utcnow() + timedelta(hours=2, minutes=45)),
+            Appointment.status != "cancelled"
+        ).all()
 
         if not bookings:
             keyboard = InlineKeyboardMarkup(
@@ -134,18 +139,64 @@ async def my_bookings_handler(callback_query: CallbackQuery):
             await callback_query.message.edit_text("У вас пока нет активных записей.", reply_markup=keyboard)
             return
 
-        booking_details = "\n".join(
-            f"- {booking.timeslot.start_time.strftime('%Y-%m-%d %H:%M')} | {booking.service.name} | Мастер: {booking.master.name}"
-            for booking in bookings
-        )
+        # Формируем кнопки "Отменить" для каждой записи
+        keyboard_buttons = []
+        for booking in bookings:
+            button_text = (
+                f"{booking.timeslot.start_time.strftime('%Y-%m-%d %H:%M')} | "
+                f"{booking.service.name} | Мастер: {booking.master.name}"
+            )
+            cancel_callback = f"cancel_booking_{booking.id}"
+            keyboard_buttons.append([InlineKeyboardButton(text=button_text, callback_data="noop")])
+            keyboard_buttons.append([InlineKeyboardButton(text="❌ Отменить", callback_data=cancel_callback)])
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
-        ]
-    )
-    new_text = f"Ваши записи:\n{booking_details}"
-    await callback_query.message.edit_text(new_text, reply_markup=keyboard)
+    # Добавляем кнопку "Назад в меню"
+    keyboard_buttons.append([InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")])
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+    await callback_query.message.edit_text("Ваши записи:", reply_markup=keyboard)
+
+
+@router.callback_query(F.data.startswith("cancel_booking_"))
+async def cancel_booking_handler(callback_query: CallbackQuery):
+    booking_id = int(callback_query.data.split("_")[2])  # Получаем ID записи
+
+    with SessionLocal() as session:
+        # Находим запись
+        booking = session.query(Appointment).filter(Appointment.id == booking_id).first()
+        if not booking:
+            await callback_query.answer("Запись не найдена или уже отменена.", show_alert=True)
+            return
+
+        # Помечаем запись как отменённую
+        booking.status = "cancelled"
+
+        # Освобождаем все временные слоты, связанные с этой записью
+        timeslot = session.query(TimeSlot).filter(TimeSlot.id == booking.timeslot_id).first()
+        if not timeslot:
+            await callback_query.answer("Связанные временные слоты не найдены.", show_alert=True)
+            return
+
+        # Рассчитываем длительность услуги
+        service_duration = booking.service.duration  # В минутах
+        required_slots = service_duration // 15
+
+        # Ищем последовательные слоты для освобождения
+        end_time = timeslot.start_time + timedelta(minutes=service_duration)
+        booked_slots = session.query(TimeSlot).filter(
+            TimeSlot.master_id == timeslot.master_id,
+            TimeSlot.start_time >= timeslot.start_time,
+            TimeSlot.start_time < end_time,
+            TimeSlot.status == TimeSlotStatus.booked
+        ).order_by(TimeSlot.start_time).all()
+
+        for slot in booked_slots:
+            slot.status = TimeSlotStatus.free  # Освобождаем слот
+
+        session.commit()
+
+    # Обновляем список записей
+    await my_bookings_handler(callback_query)
 
 
 @router.callback_query(F.data == "previous_step")
