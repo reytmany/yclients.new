@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Добавить услугу мастеру</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #ffe4e1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        .form-container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 1500px;
+        }
+
+        label {
+            font-size: 18px;
+        }
+
+        h2 {
+            text-align: center;
+        }
+
+        .submit-button {
+            background-color: #d3d3d3;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-size: 18px;
+            cursor: pointer;
+        }
+
+        .submit-button:hover {
+            background-color: #ffc0cb;
+        }
+    </style>
+</head>
+<body>
+<div class="form-container">
+    <h2>Добавить услуги мастеру</h2>
+    <form method="post">
+        <div class="services-container">
+            <h3>Выберите предоставляемые услуги:</h3>
+            {% for service in services %}
+            <label>
+                <input type="checkbox" name="services" value="{{ service.id }}">
+                {{ service.name }}
+            </label>
+            {% endfor %}
+        </div>
+
+
+        <button type="submit" class="submit-button">Сохранить</button>
+    </form>
+</div>
+</body>
+</html>
