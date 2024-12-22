@@ -1,12 +1,11 @@
 from aiogram import Router, F
-from database import SessionLocal, Appointment, User, TimeSlot, TimeSlotStatus
 from sqlalchemy.orm import joinedload
 from states import BookingStates
 
 router = Router()
 
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from database import SessionLocal, TimeSlot, Master, master_service_association, TimeSlotStatus
+from database import SessionLocal, TimeSlot, Master, master_service_association, TimeSlotStatus, AppointmentStatus, Review, Appointment, User
 from datetime import datetime, timedelta
 from aiogram.fsm.context import FSMContext
 from utils.calendar import find_available_slots
@@ -289,3 +288,108 @@ async def add_to_calendar(callback_query: CallbackQuery, state: FSMContext):
         ]
     )
     await callback_query.message.edit_text("Добавьте запись в ваш календарь:", reply_markup=keyboard)
+
+
+@router.callback_query(F.data == "leave_review")
+async def leave_review_handler(callback_query: CallbackQuery):
+    user_id = callback_query.from_user.id
+
+    with SessionLocal() as session:
+        user = session.query(User).filter(User.telegram_id == str(user_id)).first()
+        if not user:
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")]]
+            )
+            await callback_query.message.edit_text("У вас пока нет завершённых записей.", reply_markup=keyboard)
+            return
+
+        completed_appointments = session.query(Appointment).options(
+            joinedload(Appointment.service),
+            joinedload(Appointment.master)
+        ).filter(
+            Appointment.user_id == user.id,
+            Appointment.status == AppointmentStatus.completed
+        ).all()
+
+        if not completed_appointments:
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")]]
+            )
+            await callback_query.message.edit_text("У вас нет завершённых записей для оставления отзыва.", reply_markup=keyboard)
+            return
+
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(
+                    text=f"{appt.service.name} | {appt.master.name} | {appt.timeslot.start_time.strftime('%Y-%m-%d %H:%M')}",
+                    callback_data=f"review_{appt.id}"
+                )]
+                for appt in completed_appointments
+            ] + [[InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")]]
+        )
+
+        await callback_query.message.edit_text("Выберите запись для отзыва:", reply_markup=keyboard)
+
+
+@router.callback_query(F.data.startswith("review_"))
+async def review_handler(callback_query: CallbackQuery, state: FSMContext):
+    appointment_id = int(callback_query.data.split("_")[1])
+    await state.update_data(appointment_id=appointment_id)
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⭐️", callback_data="rate_1"),
+             InlineKeyboardButton(text="⭐️⭐️", callback_data="rate_2"),
+             InlineKeyboardButton(text="⭐️⭐️⭐️", callback_data="rate_3"),
+             InlineKeyboardButton(text="⭐️⭐️⭐️⭐️", callback_data="rate_4"),
+             InlineKeyboardButton(text="⭐️⭐️⭐️⭐️⭐️", callback_data="rate_5")]
+        ]
+    )
+    await callback_query.message.edit_text("Оцените услугу от 1 до 5:", reply_markup=keyboard)
+
+@router.callback_query(F.data.startswith("rate_"))
+async def rate_handler(callback_query: CallbackQuery, state: FSMContext):
+    rating = int(callback_query.data.split("_")[1])
+    await state.update_data(rating=rating)
+
+    await callback_query.message.edit_text("Напишите ваш отзыв в сообщении:")
+    await state.set_state("waiting_for_review_text")
+
+from aiogram.filters import StateFilter
+
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+@router.message(StateFilter("waiting_for_review_text"))
+async def review_text_handler(message, state: FSMContext):
+    data = await state.get_data()
+    appointment_id = data.get("appointment_id")
+    rating = data.get("rating")
+    review_text = message.text
+
+    with SessionLocal() as session:
+        appointment = session.query(Appointment).filter(Appointment.id == appointment_id).first()
+        if appointment:
+            review = Review(
+                user_id=appointment.user_id,
+                master_id=appointment.master_id,
+                rating=rating,
+                review_text=review_text
+            )
+            session.add(review)
+            session.commit()
+
+    # Клавиатура с кнопкой "Назад в меню"
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")]
+        ]
+    )
+
+    # Отправка сообщения с кнопкой
+    await message.answer("Спасибо за ваш отзыв!", reply_markup=keyboard)
+
+    # Очистка состояния
+    await state.clear()
+
+
+

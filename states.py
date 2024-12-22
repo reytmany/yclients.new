@@ -8,3 +8,4 @@ class BookingStates(StatesGroup):
     selecting_date = State()
     selecting_time = State()
     confirming = State()
+    waiting_for_review_text = State()
