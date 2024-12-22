@@ -78,9 +78,9 @@
     {% if reviews %}
         {% for review in reviews %}
         <div class="review-card">
-            <h3>{{ review.author }}</h3>
+            <h3>{{ review.name }}</h3>
             <p class="rating">Оценка: {{ review.rating }}/5</p>
-            <p>{{ review.comment }}</p>
+            <p>{{ review.review_text }}</p>
         </div>
         {% endfor %}
     {% else %}
