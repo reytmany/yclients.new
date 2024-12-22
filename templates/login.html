@@ -13,7 +13,7 @@
             display: grid;
             justify-content: center;
             align-items: center;
-            height: 80vh;
+            height: 100vh;
         }
 
         .login-container {
@@ -26,7 +26,7 @@
             text-align: center;
         }
 
-        .login-form h2 {
+        h2 {
             margin-bottom: 30px;
             font-size: 24px;
             color: #333;
@@ -53,7 +53,7 @@
             box-sizing: border-box;
         }
 
-        .login-button {
+        .login-button, .register-button {
             background-color: #d3d3d3;
             color: #fff;
             border: none;
@@ -63,16 +63,38 @@
             font-size: 20px;
         }
 
-        .login-button:hover {
+        .login-button:hover, .register-button:hover {
             background-color: #ffc0cb;
+        }
+
+        .error-message, .success-message {
+            font-size: 20px;
+            margin-bottom: 10px;
         }
 
         .error-message {
             color: red;
-            font-size: 20px;
-            margin-bottom: 10px;
+        }
+
+        .success-message {
+            color: green;
+        }
+
+        .separator {
+            margin: 40px 0;
+            border-top: 1px solid #ccc;
+        }
+
+        .hidden {
+            display: none;
         }
     </style>
+    <script>
+        function toggleRegistration() {
+            const registrationForm = document.getElementById("registration-form");
+            registrationForm.classList.toggle("hidden");
+        }
+    </script>
 </head>
 <body>
 
@@ -80,17 +102,40 @@
     <form method="post" action="/login" class="login-form">
         <h2>Вход в систему</h2>
         {% if error %}
-        <p class="error-message">{{ error }}</p>
+            <p class="error-message">{{ error }}</p>
         {% endif %}
         <div class="form-group">
-            <label for="username">Логин:</label>
-            <input type="text" id="username" name="username" required>
+            <label for="login">Логин:</label>
+            <input type="text" id="login" name="login" required>
         </div>
         <div class="form-group">
             <label for="password">Пароль:</label>
             <input type="password" id="password" name="password" required>
         </div>
         <button type="submit" class="login-button">Войти</button>
+    </form>
+
+    <div class="separator"></div>
+
+    <button class="register-button" onclick="toggleRegistration()">Я еще не зарегистрированный администратор</button>
+
+    <form method="post" action="/register-admin" class="login-form hidden" id="registration-form">
+        <h2>Регистрация администратора</h2>
+        {% if success %}
+        <p class="success-message">{{ success }}</p>
+        {% endif %}
+        {% if error %}
+        <p class="error-message">{{ error }}</p>
+        {% endif %}
+        <div class="form-group">
+            <label for="login">Имя пользователя:</label>
+            <input type="text" id="reg_login" name="login" required>
+        </div>
+        <div class="form-group">
+            <label for="password">Придумайте пароль:</label>
+            <input type="text" id="reg_password" name="password" required>
+        </div>
+        <button type="submit" class="register-button">Зарегистрироваться</button>
     </form>
 </div>
 
