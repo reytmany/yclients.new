@@ -38,7 +38,7 @@ def setup_test_data():
         master2 = Master(name="Анна", login="anna", password="pass123", rating=4.0, telegram_id="@anna")
         master2.services.extend([service2, service3])
 
-        master3 = Master(name="Яна", login="yana", password="pass123", rating=4.3, telegram_id="@yana")
+        master3 = Master(name="Яна", login="yana", password="pass123", rating=4.3, telegram_id=916808487)
         master3.services.extend([service2, service3])
 
         session.add_all([master1, master2, master3])

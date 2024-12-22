@@ -1,6 +1,7 @@
 from aiogram import Router, F
 from sqlalchemy.orm import joinedload
 from states import BookingStates
+from master_bot import insertion_send_telegram_notification
 
 router = Router()
 
@@ -204,6 +205,8 @@ async def save_booking(callback_query: CallbackQuery, state: FSMContext):
             session.add(user)
             session.commit()
 
+        user_telegram_id = user.telegram_id
+
         # Создаем запись на прием
         appointment = Appointment(
             user_id=user.id,
@@ -242,6 +245,7 @@ async def save_booking(callback_query: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text="Назад в меню", callback_data="back_to_menu")],
         ]
     )
+    await insertion_send_telegram_notification(master_id, user_telegram_id, data)
     await callback_query.message.edit_text(
         f"Вы успешно записались на:\n"
         f"Услуга: {service_name}\n"
@@ -338,11 +342,11 @@ async def review_handler(callback_query: CallbackQuery, state: FSMContext):
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="⭐️", callback_data="rate_1"),
-             InlineKeyboardButton(text="⭐️⭐️", callback_data="rate_2"),
-             InlineKeyboardButton(text="⭐️⭐️⭐️", callback_data="rate_3"),
-             InlineKeyboardButton(text="⭐️⭐️⭐️⭐️", callback_data="rate_4"),
-             InlineKeyboardButton(text="⭐️⭐️⭐️⭐️⭐️", callback_data="rate_5")]
+            [InlineKeyboardButton(text="1⭐️", callback_data="rate_1"),
+             InlineKeyboardButton(text="2⭐️", callback_data="rate_2"),
+             InlineKeyboardButton(text="3⭐️", callback_data="rate_3"),
+             InlineKeyboardButton(text="4⭐️", callback_data="rate_4"),
+             InlineKeyboardButton(text="5⭐️", callback_data="rate_5")]
         ]
     )
     await callback_query.message.edit_text("Оцените услугу от 1 до 5:", reply_markup=keyboard)
