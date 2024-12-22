@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Личный кабинет {{ username }}</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #ffe4e1;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            height: 100vh;
+            padding: 20px;
+        }
+
+        .dashboard-container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 800px;
+            margin-top: 20px;
+        }
+
+        .dashboard-container h2 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .profile-info {
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .profile-info h3 {
+            margin-top: 10px;
+            color: #333;
+        }
+
+        .profile-info p {
+            margin: 5px 0;
+            color: #555;
+        }
+
+        .links-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .links-container a {
+            display: inline-block;
+            margin: 10px;
+            padding: 10px 20px;
+            background-color: #d3d3d3;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 4px;
+            width: 200px;
+            text-align: center;
+        }
+
+        .links-container a:hover {
+            background-color: #ffc0cb;
+        }
+    </style>
+</head>
+<body>
+
+<div class="dashboard-container">
+    <h2>Личный кабинет {{ username }}</h2>
+
+    <div class="profile-info">
+        <h3>{{ username }}</h3>
+    </div>
+
+    <div class="links-container">
+        <a href="/schedule/{{ login }}/false">Расписание</a>
+        <a href="/reviews/{{ login }}/false">Отзывы</a>
+    </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Выберите график работы</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #ffe4e1;
+            margin: 0;
+            padding: 20px;
+            font-size: 16px;
+        }
+
+        .schedule-container {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 20px;
+        }
+
+        .day-card {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            padding: 10px;
+            text-align: center;
+        }
+
+        .day-card h3 {
+            margin: 0 0 10px;
+            font-size: 18px;
+            color: #333;
+        }
+
+        .time-slots {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            justify-content: center;
+        }
+
+        .time-slot {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .time-slot input {
+            margin-right: 5px;
+        }
+
+        .time-slot label {
+            font-size: 14px;
+        }
+
+        .submit-button {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 20px;
+            background-color: #d3d3d3;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .submit-button:hover {
+            background-color: #ffc0cb;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Выберите график работы</h1>
+
+<form action="/chooseschedule/{{ login }}/{{ is_admin }}" method="post">
+    <div class="schedule-container">
+        {% for day in week %}
+        <div class="day-card">
+            <h3>{{ day.weekday }}, {{ day.date }}</h3>
+            <div class="time-slots">
+                {% for hour in range(9, 19) %}
+                <div class="time-slot">
+                    <input type="checkbox" name="schedule" value="{{ day.date }}_{{ hour }}">
+                    <label>{{ hour }}:00 - {{ hour+1 }}:00</label>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="time-slots">
+                    <input type="checkbox" name="schedule" value="{{ day.date }}_off">
+                    <label>Взять выходной</label>
+                </div>
+        </div>
+        {% endfor %}
+
+    </div>
+    <button type="submit" class="submit-button">Сохранить график</button>
+</form>
+
+</body>
+</html>
