@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Float, Table
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Float, Table, event
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session
 from sqlalchemy import create_engine
 import enum
@@ -41,13 +41,18 @@ class Master(Base):
     name = Column(String, nullable=False)
     login = Column(String, nullable=False, unique=True)
     password = Column(String, nullable=False)
-    rating = Column(Float, nullable=False)
     telegram_id = Column(String, nullable=False, unique=True)
+    total_rating = Column(Float, nullable=False, default=0)
+    num_reviews = Column(Integer, nullable=False, default=0)
 
     services = relationship('Service', secondary=master_service_association, back_populates='masters')
     time_slots = relationship("TimeSlot", back_populates="master")
     appointments = relationship("Appointment", back_populates="master")
     reviews = relationship("Review", back_populates="master")
+
+    @property
+    def rating(self):
+        return self.total_rating / self.num_reviews if self.num_reviews > 0 else 0
 
     def __repr__(self):
         return f"<Master(id={self.id}, name='{self.name}', login='{self.login}', rating={self.rating}, telegram_id='{self.telegram_id}')>"
@@ -134,12 +139,11 @@ class Admin(Base):
     __tablename__ = 'admins'
 
     id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
     login = Column(String, nullable=False, unique=True)
     password = Column(String, nullable=False)
 
     def __repr__(self):
-        return f"<Admin(id={self.id}, name='{self.name}', login='{self.login}')>"
+        return f"<Admin(id={self.id}, login='{self.login}')>"
 
 
 def export_database(file_path='database_export.json'):
@@ -168,8 +172,10 @@ def export_database(file_path='database_export.json'):
                 'name': master.name,
                 'login': master.login,
                 'password': master.password,
-                'rating': master.rating,
-                'telegram_id': master.telegram_id
+                'telegram_id': master.telegram_id,
+                'total_rating': master.total_rating,
+                'num_reviews': master.num_reviews,
+                'rating': master.rating
             }
             for master in masters
         ]
@@ -232,7 +238,6 @@ def export_database(file_path='database_export.json'):
         data['admins'] = [
             {
                 'id': admin.id,
-                'name': admin.name,
                 'login': admin.login,
                 'password': admin.password
             }
@@ -243,5 +248,33 @@ def export_database(file_path='database_export.json'):
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 
-# Создаем все таблицы в базе данных
+def update_master_rating(mapper, connection, target):
+    master_table = Master.__table__
+
+    connection.execute(
+        master_table.update()
+        .where(master_table.c.id == target.master_id)
+        .values(
+            total_rating=master_table.c.total_rating + target.rating,
+            num_reviews=master_table.c.num_reviews + 1
+        )
+    )
+
+
+def delete_master_rating(mapper, connection, target):
+    master_table = Master.__table__
+
+    connection.execute(
+        master_table.update()
+        .where(master_table.c.id == target.master_id)
+        .values(
+            total_rating=master_table.c.total_rating - target.rating,
+            num_reviews=master_table.c.num_reviews - 1
+        )
+    )
+
+
+event.listen(Review, 'after_insert', update_master_rating)
+event.listen(Review, 'after_delete', delete_master_rating)
+
 Base.metadata.create_all(engine)

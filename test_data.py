@@ -32,15 +32,15 @@ def setup_test_data():
         session.commit()
 
         # Добавление мастеров
-        master1 = Master(name="Марина", login="marina", password="pass123", rating=4.5, telegram_id="@marina")
+        master1 = Master(name="Марина", login="master1", password="abcdefgh", telegram_id='1', total_rating=0,
+                         num_reviews=0)
         master1.services.extend([service1])
-
-        master2 = Master(name="Анна", login="anna", password="pass123", rating=4.0, telegram_id="@anna")
+        master2 = Master(name="Анна", login="master2", password="pass1234", telegram_id='23', total_rating=0,
+                         num_reviews=0)
         master2.services.extend([service2, service3])
-
-        master3 = Master(name="Яна", login="yana", password="pass123", rating=4.3, telegram_id=916808487)
+        master3 = Master(name="Яна", login="master3", password="123passw", telegram_id=916808487, total_rating=0,
+                         num_reviews=0)
         master3.services.extend([service2, service3])
-
         session.add_all([master1, master2, master3])
         session.commit()
 
@@ -65,7 +65,7 @@ def setup_test_data():
         session.commit()
 
         # Добавление администратора
-        admin = Admin(name="Администратор", login="admin", password="admin123")
+        admin = Admin(login="admin", password="admin123")
         session.add(admin)
         session.commit()
 
