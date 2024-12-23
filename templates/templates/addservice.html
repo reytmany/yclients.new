@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Добавить услугу</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #ffe4e1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-size: 25px;
+        }
+
+        .form-container {
+            background-color: #fff;
+            padding: 20px 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 600px;
+            text-align: center;
+        }
+
+        .form-container h2 {
+            margin-bottom: 20px;
+            color: #333;
+            font-size: 30px;
+        }
+
+        .form-container form {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-container input {
+            margin-bottom: 10px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 18px;
+        }
+
+        .form-container button {
+            padding: 10px;
+            background-color: #d3d3d3;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 20px;
+        }
+
+        .form-container button:hover {
+            background-color: #ffc0cb;
+        }
+    </style>
+</head>
+<body>
+<div class="form-container">
+    <h2>Добавить новую услугу</h2>
+    <form action="/add-service" method="post">
+        <input type="text" name="name" placeholder="Название услуги" required>
+        <input type="number" name="price" placeholder="Цена (₽)" min="0" required>
+        <input type="number" name="duration" placeholder="Длительность (мин.)" min="1" required>
+        <button type="submit">Добавить услугу</button>
+    </form>
+</div>
+</body>
+</html>

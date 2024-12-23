@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мастера и услуги</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 20px;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #ffe4e1;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            flex-direction: column;
+            height: auto;
+            padding: 20px;
+        }
+
+        .container {
+            background-color: #fff;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            margin-top: 30px;
+            font-size: 30px;
+        }
+
+        .container h2 {
+            margin-bottom: 20px;
+            font-size: 27px;
+            text-align: center;
+            color: #333;
+        }
+
+        .cards {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        .card {
+            background-color: #f9f9f9;
+            padding: 5px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            font-size: 27px;
+            text-align: left;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            width: 300px;
+            line-height: 1.2
+        }
+
+        .card h3 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        .card p {
+            margin: 10px 0;
+            font-size: 27px;
+            color: #555;
+        }
+        .card a {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 10px 10px;
+            background-color: #d3d3d3;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .card a:hover {
+            background-color: #ffc0cb;
+        }
+        .add-button {
+            background-color: #d3d3d3;
+            color: #fff;
+            border: none;
+            padding: 20px;
+            width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            font-size: 30px;
+            text-align: center;
+            text-decoration: none;
+            margin-top: 20px;
+        }
+
+        .add-button:hover {
+            background-color: #ffc0cb;
+        }
+
+        .download-button {
+            background-color: #d3d3d3;
+            color: #fff;
+            padding: 20px;
+            width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            font-size: 30px;
+            text-align: center;
+            text-decoration: none;
+            margin-top: 40px;
+        }
+
+        .download-button:hover {
+            background-color: #ffc0cb;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Мастера</h2>
+    <div class="cards">
+        {% for master in masters %}
+        <div class="card">
+            <h3>{{ master.name }}</h3>
+            <p>Рейтинг: {{ master.rating }}/5</p>
+            <p>Услуги: {{ master.services }}</p>
+            <div>
+                <a href="/reviews/{{ master.login }}/{{ is_admin }}">Отзывы</a>
+                <a href="/schedule/{{ master.login }}/{{ is_admin }}">Расписание</a>
+                <a href="/addservicetomaster/{{ master.login }}">Добавить услугу</a>
+            </div>
+        </div>
+        {% endfor %}
+        <a href="/add-master" class="add-button">Добавить мастера</a>
+    </div>
+</div>
+
+<div class="container">
+    <h2>Услуги</h2>
+    <div class="cards">
+        {% for service in services %}
+        <div class="card">
+            <h3>{{ service.name }}</h3>
+            <p>Цена: {{ service.price }} ₽</p>
+            <p>Длительность: {{ service.duration }} мин.</p>
+        </div>
+        {% endfor %}
+        <a href="/add-service" class="add-button">Добавить услугу</a>
+    </div>
+</div>
+<a href="/download-db" class="download-button" download>Скачать базу данных</a>
+</body>
+</html>
