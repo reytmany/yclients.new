@@ -52,6 +52,8 @@ async def get_telegram_id_by_master_id(master_id):
 async def insertion_send_telegram_notification(master_id, user_telegram_id, booking_data):
     async with Bot(token=API_TOKEN) as master_bot:
         master_telegram_id = await get_telegram_id_by_master_id(master_id)
+        if master_telegram_id is None:
+            return
         name = await get_username_by_telegram_id(user_telegram_id)
         message = (
             f"У вас новая запись на {booking_data['slot_time'].strftime('%d-%m %H:%M')}\n"  
@@ -66,6 +68,8 @@ async def insertion_send_telegram_notification(master_id, user_telegram_id, book
 async def delete_send_telegram_notification(master_id, user_id, slot_time, service_name):
     async with Bot(token=API_TOKEN) as master_bot:
         master_telegram_id = await get_telegram_id_by_master_id(master_id)
+        if master_telegram_id is None:
+            return
         name = await get_username_by_telegram_id(user_id)
         message = (
             f"У вас отмена записи на {slot_time.strftime('%d-%m %H:%M')}\n" 
