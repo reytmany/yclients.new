@@ -96,7 +96,7 @@
             {% for service in services %}
             <label>
                 <input type="checkbox" name="services" value="{{ service.id }}">
-                {{ service.name }} (₽{{ service.price }}, {{ service.duration }} мин.)
+                {{ service.name }} (₽{{ service.cost }}, {{ service.duration }} мин.)
             </label>
             {% endfor %}
         </div>

@@ -71,16 +71,15 @@
 
 <div class="review-container">
     {% if is_admin %}
-    <h2>Отзывы о работе мастера {{ username }}</h2>
+    <h2>Отзывы о работе мастера</h2>
     {% else %}
     <h2>Отзывы о вашей работе</h2>
     {% endif %}
     {% if reviews %}
         {% for review in reviews %}
         <div class="review-card">
-            <h3>{{ review.name }}</h3>
             <p class="rating">Оценка: {{ review.rating }}/5</p>
-            <p>{{ review.review_text }}</p>
+            <p>{{ review.text }}</p>
         </div>
         {% endfor %}
     {% else %}

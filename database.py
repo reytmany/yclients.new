@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Floa
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker, Session
 from sqlalchemy import create_engine
 import enum
-import json
+import csv
 import os
 
 Base = declarative_base()
@@ -146,106 +146,126 @@ class Admin(Base):
         return f"<Admin(id={self.id}, login='{self.login}')>"
 
 
-def export_database(file_path='database_export.json'):
-    directory = os.path.dirname(file_path)
-    if directory and not os.path.exists(directory):
-        os.makedirs(directory)
-
-    data = {}
+def export_database():
+    export_dir = 'database_export'
+    if not os.path.exists(export_dir):
+        os.makedirs(export_dir)
 
     with Session(engine) as session:
         services = session.query(Service).all()
-        data['services'] = [
-            {
-                'id': service.id,
-                'name': service.name,
-                'cost': service.cost,
-                'duration': service.duration
-            }
-            for service in services
-        ]
+        with open(os.path.join(export_dir, 'services.csv'), 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['id', 'name', 'cost', 'duration']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+            writer.writeheader()
+            for service in services:
+                writer.writerow({
+                    'id': service.id,
+                    'name': service.name,
+                    'cost': service.cost,
+                    'duration': service.duration
+                })
 
         masters = session.query(Master).all()
-        data['masters'] = [
-            {
-                'id': master.id,
-                'name': master.name,
-                'login': master.login,
-                'password': master.password,
-                'telegram_id': master.telegram_id,
-                'total_rating': master.total_rating,
-                'num_reviews': master.num_reviews,
-                'rating': master.rating
-            }
-            for master in masters
-        ]
+        with open(os.path.join(export_dir, 'masters.csv'), 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['id', 'name', 'login', 'password', 'telegram_id', 'total_rating', 'num_reviews', 'rating']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+            writer.writeheader()
+            for master in masters:
+                writer.writerow({
+                    'id': master.id,
+                    'name': master.name,
+                    'login': master.login,
+                    'password': master.password,
+                    'telegram_id': master.telegram_id,
+                    'total_rating': master.total_rating,
+                    'num_reviews': master.num_reviews,
+                    'rating': master.rating
+                })
 
         master_service_assoc = session.execute(master_service_association.select()).fetchall()
-        data['master_service_association'] = [
-            {
-                'master_id': assoc.master_id,
-                'service_id': assoc.service_id
-            }
-            for assoc in master_service_assoc
-        ]
+        with open(os.path.join(export_dir, 'master_service_association.csv'), 'w', newline='',
+                  encoding='utf-8') as csvfile:
+            fieldnames = ['master_id', 'service_id']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+            writer.writeheader()
+            for assoc in master_service_assoc:
+                writer.writerow({
+                    'master_id': assoc.master_id,
+                    'service_id': assoc.service_id
+                })
 
         timeslots = session.query(TimeSlot).all()
-        data['timeslots'] = [
-            {
-                'id': slot.id,
-                'master_id': slot.master_id,
-                'start_time': slot.start_time.isoformat(),
-                'status': slot.status.value
-            }
-            for slot in timeslots
-        ]
+        with open(os.path.join(export_dir, 'timeslots.csv'), 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['id', 'master_id', 'start_time', 'status']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+            writer.writeheader()
+            for slot in timeslots:
+                writer.writerow({
+                    'id': slot.id,
+                    'master_id': slot.master_id,
+                    'start_time': slot.start_time.isoformat(),
+                    'status': slot.status.value
+                })
 
         users = session.query(User).all()
-        data['users'] = [
-            {
-                'id': user.id,
-                'telegram_id': user.telegram_id
-            }
-            for user in users
-        ]
+        with open(os.path.join(export_dir, 'users.csv'), 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['id', 'telegram_id']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+            writer.writeheader()
+            for user in users:
+                writer.writerow({
+                    'id': user.id,
+                    'telegram_id': user.telegram_id
+                })
 
         appointments = session.query(Appointment).all()
-        data['appointments'] = [
-            {
-                'id': appointment.id,
-                'user_id': appointment.user_id,
-                'master_id': appointment.master_id,
-                'service_id': appointment.service_id,
-                'timeslot_id': appointment.timeslot_id,
-                'status': appointment.status.value
-            }
-            for appointment in appointments
-        ]
+        with open(os.path.join(export_dir, 'appointments.csv'), 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['id', 'user_id', 'master_id', 'service_id', 'timeslot_id', 'status']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+            writer.writeheader()
+            for appointment in appointments:
+                writer.writerow({
+                    'id': appointment.id,
+                    'user_id': appointment.user_id,
+                    'master_id': appointment.master_id,
+                    'service_id': appointment.service_id,
+                    'timeslot_id': appointment.timeslot_id,
+                    'status': appointment.status.value
+                })
 
         reviews = session.query(Review).all()
-        data['reviews'] = [
-            {
-                'id': review.id,
-                'user_id': review.user_id,
-                'master_id': review.master_id,
-                'rating': review.rating,
-                'review_text': review.review_text
-            }
-            for review in reviews
-        ]
+        with open(os.path.join(export_dir, 'reviews.csv'), 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['id', 'user_id', 'master_id', 'rating', 'review_text']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+            writer.writeheader()
+            for review in reviews:
+                writer.writerow({
+                    'id': review.id,
+                    'user_id': review.user_id,
+                    'master_id': review.master_id,
+                    'rating': review.rating,
+                    'review_text': review.review_text
+                })
 
         admins = session.query(Admin).all()
-        data['admins'] = [
-            {
-                'id': admin.id,
-                'login': admin.login,
-                'password': admin.password
-            }
-            for admin in admins
-        ]
+        with open(os.path.join(export_dir, 'admins.csv'), 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['id', 'login', 'password']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
-    with open(file_path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+            writer.writeheader()
+            for admin in admins:
+                writer.writerow({
+                    'id': admin.id,
+                    'login': admin.login,
+                    'password': admin.password
+                })
 
 
 def update_master_rating(mapper, connection, target):

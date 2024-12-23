@@ -1,3 +1,6 @@
+import shutil
+from tempfile import TemporaryDirectory
+
 from fastapi import FastAPI, Form, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
@@ -37,7 +40,7 @@ async def login_user(
         return RedirectResponse(url="/masters", status_code=302)
     elif master:
         return RedirectResponse(url=f"/lkmasters/{master.login}", status_code=302)
-    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверное имя пользователя или пароль"}, status_code=200)
+    return templates.TemplateResponse("login.html", {"request": request, "error": "Неверное имя пользователя или пароль"})
 
 # регистрация администратора
 @app.post("/register-admin", response_class=HTMLResponse)
@@ -47,7 +50,7 @@ async def register_admin(request: Request, login: str = Form(...), password: str
         return templates.TemplateResponse("login.html", {
             "request": request,
             "error": "Администратор с таким именем уже существует."
-        }, status_code=200)
+        })
     new_admin = Admin(login=login, password=password)
     db.add(new_admin)
     db.commit()
@@ -99,7 +102,7 @@ async def get_schedule(request: Request, login: str, is_admin: bool, db: Session
     for slot in timeslots:
         date = slot.start_time.date()
         date_str = date.strftime("%d-%m-%y")
-        weekday = date.strftime("%A")
+        # weekday = date.strftime("%A")
         time = slot.start_time.strftime("%H:%M")
         slots_by_day[date_str].append({
             "time": time,
@@ -238,10 +241,10 @@ async def set_schedule(request: Request, login: str, is_admin: bool, schedule: l
 # отзывы
 @app.get("/reviews/{username}/{is_admin}", response_class=HTMLResponse)
 async def master_reviews(request: Request, username: str, is_admin: bool, db: Session = Depends(get_db)):
-    rw = db.query(Review).filter(Master.login == username).all()
+    master = db.query(Master).filter(Master.login == username).first()
+    rw = db.query(Review).filter(Review.master_id == master.id).all()
     reviews_list = [
         {
-            "name": db.query(User).filter(User.id == review.user_id).first().telegram_id,
             "rating": review.rating,
             "text": review.review_text
         }
@@ -256,18 +259,25 @@ async def master_reviews(request: Request, username: str, is_admin: bool, db: Se
 # скачивание файла
 @app.get("/download-db", response_class=FileResponse)
 async def download_db():
-    file_path = "database_export.json"
     try:
-        export_database(file_path)
+        # Указываем директорию для экспорта и имя архива
+        export_dir = "database_export"
+        archive_path = f"{export_dir}.zip"
+        # Экспортируем базу данных (архив создается внутри)
+        export_database()
+        shutil.make_archive(export_dir, 'zip', export_dir)
+        # Проверяем, существует ли созданный архив
+        if not os.path.exists(archive_path):
+            raise RuntimeError("Архив не найден после экспорта базы данных.")
+        # Возвращаем файл архива
+        return FileResponse(
+            archive_path,
+            media_type="application/zip",
+            filename="database_export.zip"
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error exporting database: {str(e)}")
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=500, detail="Exported database file not found")
-    return FileResponse(
-        file_path,
-        media_type="application/json",
-        filename="database_export.json"
-    )
+        # Возвращаем ошибку в случае проблем
+        raise HTTPException(status_code=500, detail=f"Ошибка экспорта: {str(e)}")
 
 # добавление мастеров с сгенерированными паролями и логинами
 def generate_password(length=8):
@@ -284,7 +294,6 @@ async def add_master_form(request: Request, db: Session = Depends(get_db)):
         "password": password,
         "services": services
     })
-
 # добавление
 @app.post("/add-master")
 async def save_master(
@@ -292,12 +301,13 @@ async def save_master(
     telegram_id: int = Form(...),
     login: str = Form(...),
     password: str = Form(...),
-    services: list[int] = Form(...),
+    services: list[int] = Form([]),
     db: Session = Depends(get_db)
 ):
     new_master = Master(name=name, telegram_id=telegram_id, login=login, password=password, services=[])
-    selected_services = db.query(Service).filter(Service.id.in_(services)).all()
-    new_master.services.extend(selected_services)
+    if services:
+        selected_services = db.query(Service).filter(Service.id.in_(services)).all()
+        new_master.services.extend(selected_services)
     db.add(new_master)
     db.commit()
     return RedirectResponse(url="/masters", status_code=302)
@@ -306,7 +316,7 @@ async def save_master(
 @app.get("/add-service", response_class=HTMLResponse)
 async def get_add_service_form(request: Request):
     return templates.TemplateResponse("addservice.html", {"request": request})
-# ready
+#
 @app.post("/add-service")
 async def add_service(
     request: Request,
