@@ -68,6 +68,7 @@ async def test_insertion_send_telegram_notification_send_message_error():
         "service_name": "Test Service"
     }
 
+
     # Мокаем функцию get_telegram_id_by_master_id
     with patch("master_bot.get_telegram_id_by_master_id", return_value=mock_master_telegram_id):
         # Мокаем функцию get_username_by_telegram_id
